@@ -2,6 +2,73 @@
 
 Few-shot event-time adaptation of a small vision-language model for building-damage assessment from paired remote-sensing images.
 
+## Project status and history
+
+**Snapshot: 2026-08-04 UTC.** The end-to-end system is implemented and has
+completed one full 7B diagnostic, but the research hypothesis is **not yet
+validated**. The first result was negative and is preserved rather than hidden.
+No GPU training job is currently running.
+
+| Area | Current state | Evidence |
+|---|---|---|
+| Repository | Private, flattened, and recoverable on a fresh GPU node | [`cf34db1`](https://github.com/Yunbo-max/EventTune/commit/cf34db1291619f7cc86cbfcad258260f13f35714) |
+| Model path | Qwen2.5-VL-7B, frozen BF16 base, rank-16 LoRA; no 4-bit loading or QLoRA | [`701cf7b`](https://github.com/Yunbo-max/EventTune/commit/701cf7b) |
+| Data | BRIGHT instance manifest plus event-held-out, tile-disjoint splits are stored in the private dataset Hub | [EventTune-BRIGHT](https://huggingface.co/datasets/humanlong/EventTune-BRIGHT) |
+| Completed run | Hawaii wildfire, seed 0, 100 source updates, 12 support and 3,443 query examples | [diagnostic report](reports/20260804-hawaii-100step-diagnostic.md) |
+| Durable artifacts | Source/event LoRA adapters, complete predictions, metrics, and hashes are stored privately | [EventTune adapters](https://huggingface.co/humanlong/EventTune-Qwen2.5-VL-7B) |
+| Corrective controls | Per-update class cycling and an independent 150-example source gate | [`63a36c5`](https://github.com/Yunbo-max/EventTune/commit/63a36c5), [`2a66683`](https://github.com/Yunbo-max/EventTune/commit/2a66683) |
+| Verification | 23 CPU/unit tests pass; shell and Python syntax checks pass | [`tests/`](tests) |
+| Next experiment | A fresh 1,000-update Hawaii 7B run with the gate enabled | Prepared, not started |
+
+### Result so far
+
+The first 100-update systems run proved that the data, training, adaptation,
+evaluation, export, and Hub recovery paths work end to end. It did **not** show
+a model improvement:
+
+| Hawaii query result | Source LoRA | Event-adapted LoRA |
+|---|---:|---:|
+| Macro-F1 | 0.145947 | 0.057340 |
+| Balanced accuracy | 0.333333 | 0.333333 |
+| Prediction collapse | all `intact` | all `damaged` |
+
+The failure is consistent with under-training and update-level class imbalance:
+only 200 examples were sampled from a 241,442-example source manifest. The
+adapted result is worse, so it is recorded as a negative diagnostic and not as
+evidence for EventTune. The exact weights and results remain available for
+reproduction, with the model card explicitly warning against production use.
+
+### Development timeline
+
+| Date | Milestone | Outcome |
+|---|---|---|
+| 2026-08-04 | Initial remote-sensing adaptation prototype imported ([`c4eaf3e`](https://github.com/Yunbo-max/EventTune/commit/c4eaf3e)) | Established the original paired-image EventTTT experiment. |
+| 2026-08-04 | Reproducible compute and private Hub workflow added ([`6116055`](https://github.com/Yunbo-max/EventTune/commit/6116055)) | A disposable GPU can recover code, manifests, splits, and adapters from GitHub and Hugging Face. |
+| 2026-08-04 | Portable manifests and EventTune naming completed ([`e40d1e1`](https://github.com/Yunbo-max/EventTune/commit/e40d1e1), [`c52ac48`](https://github.com/Yunbo-max/EventTune/commit/c52ac48), [`cf34db1`](https://github.com/Yunbo-max/EventTune/commit/cf34db1)) | Removed machine-specific paths and the old outer project folder. |
+| 2026-08-04 | Switched to Qwen2.5-VL-7B BF16 LoRA ([`701cf7b`](https://github.com/Yunbo-max/EventTune/commit/701cf7b), [`8e04f03`](https://github.com/Yunbo-max/EventTune/commit/8e04f03)) | Confirmed the unquantized 7B path fits an RTX A5000 at 448 px. |
+| 2026-08-04 | Long evaluation resume and portable export added ([`ae1dc0a`](https://github.com/Yunbo-max/EventTune/commit/ae1dc0a), [`71786c9`](https://github.com/Yunbo-max/EventTune/commit/71786c9)) | Long evaluations can resume; completed runs can be hashed and moved to private Hub storage. |
+| 2026-08-04 | First Hawaii diagnostic completed | Found source and event-adapter single-class collapse; published the full negative result. |
+| 2026-08-04 | Class-cycle sampler added ([`63a36c5`](https://github.com/Yunbo-max/EventTune/commit/63a36c5)) | Every six-microbatch update now contains two examples from each damage class. |
+| 2026-08-04 | ARC Prize 2025 review and fail-closed source gate added ([`2a66683`](https://github.com/Yunbo-max/EventTune/commit/2a66683)) | Gate samples are excluded from training; a failed source gate stops before target-query evaluation. |
+
+The [ARC Prize 2025 / ARC-AGI-2 review](reports/20260804-arc-prize-2025-review.md)
+records which refinement, validation, and reliability ideas transfer to
+EventTune and which reported ARC results contain incompatible assumptions or
+query leakage.
+
+### Next run
+
+The next run will use a new directory and will not reuse the failed diagnostic
+adapter. It starts with the 7B BF16 LoRA, 1,000 source updates, gradient
+accumulation six, and the held-out source gate. The pipeline requires gate
+macro-F1 of at least `0.2` and at least two predicted classes before evaluating
+the target query. The 3B model is only a CUDA/memory fallback; a learning-gate
+failure triggers diagnosis rather than an unrecorded model change.
+
+Project history is append-only at the experiment level: positive and negative
+runs keep immutable configurations, complete denominators, artifact hashes, and
+links to their Git and Hub revisions.
+
 ## Quick start on a fresh GPU node
 
 GitHub is the source of truth for code and reproducibility instructions. The
