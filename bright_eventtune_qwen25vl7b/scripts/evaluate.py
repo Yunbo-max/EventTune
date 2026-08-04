@@ -5,9 +5,11 @@ import argparse
 import json
 from pathlib import Path
 
-from eventttt.io import read_samples, write_json
+from tqdm.auto import tqdm
+
+from eventttt.io import iter_jsonl, read_samples, write_json
 from eventttt.metrics import metrics_by_event
-from eventttt.qwen import DEFAULT_MODEL, load_model, preflight, score_samples
+from eventttt.qwen import DEFAULT_MODEL, load_model, preflight, score_sample
 
 
 def main() -> None:
@@ -22,17 +24,28 @@ def main() -> None:
 
     print(json.dumps(preflight(require_gpu=True), indent=2))
     samples = read_samples(args.manifest)
+    output = Path(args.output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    predictions = output / "predictions.jsonl"
+    completed_rows = list(iter_jsonl(predictions)) if predictions.exists() else []
+    completed_ids = {row["sample_id"] for row in completed_rows}
+    if len(completed_ids) != len(completed_rows):
+        raise ValueError(f"Duplicate sample IDs in partial predictions: {predictions}")
+    pending = [sample for sample in samples if sample.sample_id not in completed_ids]
+    if completed_rows:
+        print(f"resume: {len(completed_rows)} predictions complete, {len(pending)} remaining")
     model, processor = load_model(
         args.model_id,
         source_adapter=args.adapter,
         gradient_checkpointing=False,
     )
-    rows = score_samples(model, processor, samples, args.d4_views, args.crop_size)
-    output = Path(args.output_dir)
-    output.mkdir(parents=True, exist_ok=True)
-    with (output / "predictions.jsonl").open("w", encoding="utf-8") as handle:
-        for row in rows:
+    with predictions.open("a", encoding="utf-8", buffering=1) as handle:
+        for sample in tqdm(pending, desc="Scoring", dynamic_ncols=True):
+            row = score_sample(model, processor, sample, args.d4_views, args.crop_size)
             handle.write(json.dumps(row) + "\n")
+    rows = list(iter_jsonl(predictions))
+    if len(rows) != len(samples):
+        raise RuntimeError(f"Expected {len(samples)} predictions, found {len(rows)}")
     write_json(output / "metrics.json", metrics_by_event(rows))
 
 
