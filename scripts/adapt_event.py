@@ -28,7 +28,12 @@ def main() -> None:
     parser.add_argument("--folds", type=int, default=3)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--gradient-accumulation", type=int, default=2)
+    parser.add_argument("--gradient-accumulation", type=int, default=3)
+    parser.add_argument(
+        "--sampling",
+        choices=("class_cycle", "inverse_frequency"),
+        default="class_cycle",
+    )
     parser.add_argument("--selection-d4-views", type=int, default=1)
     parser.add_argument("--crop-size", type=int, default=448)
     parser.add_argument("--seed", type=int, default=0)
@@ -67,6 +72,7 @@ def main() -> None:
                     args.gradient_accumulation,
                     args.crop_size,
                     seed=args.seed + fold_index,
+                    sampling=args.sampling,
                 )
                 rows = score_samples(
                     model, processor, held, args.selection_d4_views, args.crop_size
@@ -97,6 +103,7 @@ def main() -> None:
         args.gradient_accumulation,
         args.crop_size,
         seed=args.seed,
+        sampling=args.sampling,
     )
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)

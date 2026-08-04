@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+import math
 from typing import Iterable, Sequence
+import warnings
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
+from torch.utils.data import DataLoader, Dataset, Sampler, WeightedRandomSampler
 from tqdm.auto import tqdm
 
 from .aggregation import product_of_experts
@@ -126,6 +128,44 @@ def class_balanced_weights(samples: Sequence[Sample]) -> torch.Tensor:
     )
 
 
+class ClassCycleSampler(Sampler[int]):
+    """Yield one randomly selected example per represented class each cycle."""
+
+    def __init__(self, samples: Sequence[Sample], generator: torch.Generator):
+        if not samples:
+            raise ValueError("Cannot sample from an empty dataset")
+        groups: dict[str, list[int]] = {}
+        for index, sample in enumerate(samples):
+            groups.setdefault(sample.label, []).append(index)
+        self.groups = {label: groups[label] for label in sorted(groups)}
+        self.generator = generator
+        self.num_samples = math.ceil(len(samples) / len(groups)) * len(groups)
+
+    def __len__(self) -> int:
+        return self.num_samples
+
+    def __iter__(self):
+        queues: dict[str, list[int]] = {label: [] for label in self.groups}
+
+        def draw(label: str) -> int:
+            if not queues[label]:
+                order = torch.randperm(
+                    len(self.groups[label]), generator=self.generator
+                ).tolist()
+                queues[label] = [self.groups[label][index] for index in order]
+            return queues[label].pop()
+
+        labels = list(self.groups)
+        produced = 0
+        while produced < self.num_samples:
+            order = torch.randperm(len(labels), generator=self.generator).tolist()
+            for label_index in order:
+                if produced >= self.num_samples:
+                    break
+                yield draw(labels[label_index])
+                produced += 1
+
+
 def _find_last_subsequence(sequence: Sequence[int], query: Sequence[int]) -> int:
     for start in range(len(sequence) - len(query), -1, -1):
         if list(sequence[start : start + len(query)]) == list(query):
@@ -184,17 +224,31 @@ def fit_steps(
     crop_size: int = 448,
     max_grad_norm: float = 1.0,
     seed: int = 0,
+    sampling: str = "class_cycle",
 ) -> list[float]:
     if steps <= 0:
         return []
     torch.manual_seed(seed)
     generator = torch.Generator().manual_seed(seed)
-    sampler = WeightedRandomSampler(
-        class_balanced_weights(samples),
-        num_samples=len(samples),
-        replacement=True,
-        generator=generator,
-    )
+    if sampling == "class_cycle":
+        sampler = ClassCycleSampler(samples, generator)
+        represented_classes = len({sample.label for sample in samples})
+        examples_per_update = batch_size * gradient_accumulation
+        if examples_per_update % represented_classes:
+            warnings.warn(
+                "class_cycle crosses optimizer-update boundaries because "
+                f"batch_size * gradient_accumulation ({examples_per_update}) is not "
+                f"divisible by represented classes ({represented_classes})"
+            )
+    elif sampling == "inverse_frequency":
+        sampler = WeightedRandomSampler(
+            class_balanced_weights(samples),
+            num_samples=len(samples),
+            replacement=True,
+            generator=generator,
+        )
+    else:
+        raise ValueError(f"Unknown sampling strategy: {sampling}")
     loader = DataLoader(
         SampleDataset(samples),
         batch_size=batch_size,

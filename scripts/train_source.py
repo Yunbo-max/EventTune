@@ -17,7 +17,12 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--batch-size", type=int, default=1)
-    parser.add_argument("--gradient-accumulation", type=int, default=8)
+    parser.add_argument("--gradient-accumulation", type=int, default=6)
+    parser.add_argument(
+        "--sampling",
+        choices=("class_cycle", "inverse_frequency"),
+        default="class_cycle",
+    )
     parser.add_argument("--crop-size", type=int, default=448)
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
@@ -36,6 +41,7 @@ def main() -> None:
         args.gradient_accumulation,
         args.crop_size,
         seed=args.seed,
+        sampling=args.sampling,
     )
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)

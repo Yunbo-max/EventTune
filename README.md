@@ -96,8 +96,9 @@ Training uses standard BF16 LoRA:
 - adapters on `q_proj`, `k_proj`, `v_proj`, and `o_proj`;
 - the 7B base VLM remains frozen in bfloat16;
 - only the approximately 10.1 million LoRA parameters are optimized.
-- source examples use inverse-frequency sampling to prevent the heavily
-  imbalanced BRIGHT labels from collapsing short runs to `intact`.
+- source examples use a randomized class-cycle sampler. With the default
+  gradient accumulation of six, every optimizer update contains exactly two
+  examples from each class instead of relying on long-run balance.
 
 No 4-bit quantization or QLoRA path is used. On the reference RTX A5000 24 GB,
 one 448-pixel paired-image training step peaks at approximately 17.0 GiB
@@ -143,14 +144,14 @@ The recommended study uses:
 - target events with different hazards and sensors;
 - a source-only LoRA baseline and an adapted LoRA model under identical inference settings.
 
-The current two-GPU validation run assigns one independent event to each GPU:
-
-- GPU 0: Hawaii wildfire, seed 0;
-- GPU 1: Libya flood, seed 0;
-- four support examples per class (12 total);
-- 100 source updates and four D4 evaluation views.
-
-This initial run is a proof-of-function check. A single positive event/seed is not sufficient for a paper-level conclusion.
+The first one-GPU Hawaii wildfire diagnostic used four support examples per
+class, 100 source updates, and one inference view. It completed the full 3,443
+query denominator but exposed single-class collapse in both the source and
+adapted adapters. See
+[`reports/20260804-hawaii-100step-diagnostic.md`](reports/20260804-hawaii-100step-diagnostic.md).
+The run is a failed systems diagnostic, not positive evidence for the method.
+The corrected protocol uses exact per-update class cycling and must pass a
+balanced source-domain gate before another full target evaluation.
 
 ## Repository layout
 
@@ -283,7 +284,7 @@ split.json
 ## Run one complete event experiment
 
 ```bash
-SOURCE_GRADIENT_ACCUMULATION=8 \
+SOURCE_GRADIENT_ACCUMULATION=6 \
 CROP_SIZE=448 \
 EVAL_D4_VIEWS=8 \
 bash scripts/run_event.sh \

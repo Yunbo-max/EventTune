@@ -11,6 +11,7 @@ from typing import Any
 PUBLISHABLE_DIRECTORIES = (
     "source_adapter",
     "source_eval",
+    "source_diagnostic_eval",
     "event_adapter",
     "event_eval",
 )

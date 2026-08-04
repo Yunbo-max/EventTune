@@ -15,7 +15,7 @@ def main() -> None:
     parser.add_argument("--split-dir", required=True)
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--source-steps", type=int, default=100)
-    parser.add_argument("--source-gradient-accumulation", type=int, default=2)
+    parser.add_argument("--source-gradient-accumulation", type=int, default=6)
     parser.add_argument("--crop-size", type=int, default=448)
     parser.add_argument("--d4-views", type=int, default=4)
     parser.add_argument("--fixed-event-steps", type=int)
