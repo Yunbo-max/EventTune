@@ -17,8 +17,8 @@ Authenticate once, clone the code, choose a PyTorch wheel compatible with the
 node, and restore the persistent artifacts:
 
 ```bash
-git clone https://github.com/Yunbo-max/Remote.git
-cd Remote/bright_eventtune_qwen25vl7b
+git clone https://github.com/Yunbo-max/EventTune.git
+cd EventTune
 
 python3 -m venv .venv
 # Example for a CUDA 12.1-compatible node; select another official PyTorch
