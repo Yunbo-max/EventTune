@@ -23,13 +23,13 @@ cd EventTune
 python3 -m venv .venv
 # Example for a CUDA 12.1-compatible node; select another official PyTorch
 # wheel index when the host driver requires it.
-.venv/bin/pip install torch torchvision \
+.venv/bin/python -m pip install torch torchvision \
   --index-url https://download.pytorch.org/whl/cu121
-.venv/bin/pip install -e '.[train,test]'
+.venv/bin/python -m pip install -e '.[train,test]'
 
 .venv/bin/hf auth login
 HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh pull
-.venv/bin/pytest
+.venv/bin/python -m pytest
 .venv/bin/python scripts/preflight.py
 ```
 
@@ -51,6 +51,9 @@ bash scripts/run_event.sh \
 Before releasing an ephemeral node, publish approved outputs and push code:
 
 ```bash
+.venv/bin/python scripts/export_run.py \
+  --run-dir runs/TARGET_EVENT/seed_0 \
+  --destination runs/TARGET_EVENT/seed_0/run-v1
 HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh push-data
 HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh push-model
 git add -A && git commit -m "Describe the experiment update" && git push
@@ -181,8 +184,8 @@ node can use:
 
 ```bash
 python -m venv .venv
-.venv/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-.venv/bin/pip install -e '.[train,test]'
+.venv/bin/python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+.venv/bin/python -m pip install -e '.[train,test]'
 .venv/bin/python scripts/preflight.py
 ```
 
@@ -208,13 +211,20 @@ HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh pull
 ```
 
 Before a node is released, keep approved manifests/splits under `data/`, and
-copy model adapters, metrics, and run metadata into `artifacts/model/`, then run:
+export each completed run into `artifacts/model/`, then run:
 
 ```bash
+.venv/bin/python scripts/export_run.py \
+  --run-dir runs/TARGET_EVENT/seed_0 \
+  --destination runs/TARGET_EVENT/seed_0/run-v1
 HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh push-data
 HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh push-model
 git status
 ```
+
+The exporter requires both evaluations and `adaptation_gain.json`, omits raw
+imagery and caches, rewrites machine-local paths in run metadata, records a
+SHA-256 manifest, and refuses to overwrite a different exported run.
 
 Override either Hub destination with `EVENTTUNE_DATASET_REPO` or
 `EVENTTUNE_MODEL_REPO`. Do not upload BRIGHT, xBD, or DisasterM3 raw archives
@@ -342,7 +352,7 @@ The model training path requires CUDA, but data/split/metric components can be t
   --target-events flood-alpha \
   --shots-per-class 1 \
   --seeds 0
-.venv/bin/pytest
+.venv/bin/python -m pytest
 ```
 
 ## Scope and limitations

@@ -25,6 +25,13 @@ def main() -> None:
     split_dir = Path(args.split_dir).resolve()
     run_dir = Path(args.run_dir).resolve()
     run_dir.mkdir(parents=True, exist_ok=True)
+    git_revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=project,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout.strip()
     command = [
         "bash",
         str(project / "scripts" / "run_event.sh"),
@@ -60,6 +67,7 @@ def main() -> None:
         "pid": process.pid,
         "gpu": args.gpu,
         "started_at": datetime.now(timezone.utc).isoformat(),
+        "git_revision": git_revision,
         "command": command,
         "source_steps": args.source_steps,
         "source_gradient_accumulation": args.source_gradient_accumulation,
