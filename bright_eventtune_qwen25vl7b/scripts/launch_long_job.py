@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Launch one detached, logged EventTTT job")
+    parser = argparse.ArgumentParser(description="Launch one detached, logged EventTune job")
     parser.add_argument("--gpu", required=True)
     parser.add_argument("--split-dir", required=True)
     parser.add_argument("--run-dir", required=True)
@@ -39,7 +39,6 @@ def main() -> None:
     environment.update(
         {
             "CUDA_VISIBLE_DEVICES": args.gpu,
-            "HF_HOME": str(project / "data" / "model_cache"),
             "HF_HUB_OFFLINE": "1",
             "PYTHON_BIN": str(project / ".venv" / "bin" / "python"),
             "SOURCE_GRADIENT_ACCUMULATION": str(args.source_gradient_accumulation),

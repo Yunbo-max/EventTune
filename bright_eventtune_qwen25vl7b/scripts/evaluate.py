@@ -18,14 +18,12 @@ def main() -> None:
     parser.add_argument("--model-id", default=DEFAULT_MODEL)
     parser.add_argument("--d4-views", type=int, default=8)
     parser.add_argument("--crop-size", type=int, default=448)
-    parser.add_argument("--no-qlora", action="store_true")
     args = parser.parse_args()
 
-    print(json.dumps(preflight(require_gpu=True, require_qlora=not args.no_qlora), indent=2))
+    print(json.dumps(preflight(require_gpu=True), indent=2))
     samples = read_samples(args.manifest)
     model, processor = load_model(
         args.model_id,
-        qlora=not args.no_qlora,
         source_adapter=args.adapter,
         gradient_checkpointing=False,
     )

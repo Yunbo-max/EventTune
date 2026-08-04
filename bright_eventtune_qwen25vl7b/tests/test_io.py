@@ -1,6 +1,6 @@
 import json
 
-from eventttt.io import read_samples, write_samples
+from eventttt.io import read_samples, validate_manifest, write_samples
 from eventttt.schemas import Sample
 
 
@@ -31,3 +31,8 @@ def test_manifest_paths_are_portable_and_round_trip(tmp_path):
     assert restored.pre_image == str(pre.resolve())
     assert restored.post_image == str(post.resolve())
 
+    summary = validate_manifest(manifest)
+    assert summary["samples"] == 1
+    assert summary["events"] == {"event": 1}
+    assert summary["labels"] == {"intact": 1}
+    assert summary["unique_images"] == 2

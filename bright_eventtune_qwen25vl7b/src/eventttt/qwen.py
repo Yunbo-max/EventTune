@@ -6,6 +6,7 @@ from typing import Iterable, Sequence
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Dataset
+from tqdm.auto import tqdm
 
 from .aggregation import product_of_experts
 from .prompts import messages
@@ -13,7 +14,7 @@ from .schemas import DAMAGE_LABELS, Sample
 from .vision import crop_pair, d4_pair, load_image
 
 
-DEFAULT_MODEL = "Qwen/Qwen2.5-VL-3B-Instruct"
+DEFAULT_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
 
 
 def _require_training_packages():
@@ -22,66 +23,54 @@ def _require_training_packages():
             LoraConfig,
             PeftModel,
             get_peft_model,
-            prepare_model_for_kbit_training,
         )
         from qwen_vl_utils import process_vision_info
-        from transformers import AutoProcessor, BitsAndBytesConfig, Qwen2_5_VLForConditionalGeneration
+        from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
     except ImportError as exc:
         raise RuntimeError(
             "Install requirements.txt before model training (transformers, peft, "
-            "bitsandbytes, qwen-vl-utils)."
+            "qwen-vl-utils, torchvision)."
         ) from exc
     return {
         "LoraConfig": LoraConfig,
         "PeftModel": PeftModel,
         "get_peft_model": get_peft_model,
-        "prepare_model_for_kbit_training": prepare_model_for_kbit_training,
         "process_vision_info": process_vision_info,
         "AutoProcessor": AutoProcessor,
-        "BitsAndBytesConfig": BitsAndBytesConfig,
         "Model": Qwen2_5_VLForConditionalGeneration,
     }
 
 
-def preflight(require_gpu: bool = True, require_qlora: bool = True) -> dict:
+def preflight(require_gpu: bool = True) -> dict:
     packages = _require_training_packages()
-    import bitsandbytes.cextension as bnb_extension
 
     status = {
         "torch": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
         "cuda_devices": torch.cuda.device_count(),
-        "bitsandbytes_cuda": bool(bnb_extension.lib.compiled_with_cuda),
+        "bf16_supported": torch.cuda.is_bf16_supported() if torch.cuda.is_available() else False,
+        "gpu_memory_gib": [
+            round(torch.cuda.get_device_properties(index).total_memory / 1024**3, 2)
+            for index in range(torch.cuda.device_count())
+        ],
         "model_class": packages["Model"].__name__,
     }
     if require_gpu and not status["cuda_available"]:
-        raise RuntimeError("CUDA is required for Qwen2.5-VL-3B training but is not visible")
-    if require_qlora and not status["bitsandbytes_cuda"]:
-        raise RuntimeError("QLoRA requested but bitsandbytes has no CUDA backend")
+        raise RuntimeError("CUDA is required for Qwen2.5-VL-7B training but is not visible")
+    if require_gpu and not status["bf16_supported"]:
+        raise RuntimeError("The standard LoRA path requires a CUDA GPU with bfloat16 support")
     return status
 
 
 def load_model(
     model_id: str = DEFAULT_MODEL,
-    qlora: bool = True,
     source_adapter: str | None = None,
     gradient_checkpointing: bool = True,
 ):
     packages = _require_training_packages()
     processor = packages["AutoProcessor"].from_pretrained(model_id)
     kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto"}
-    if qlora:
-        kwargs["quantization_config"] = packages["BitsAndBytesConfig"](
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=True,
-        )
     model = packages["Model"].from_pretrained(model_id, **kwargs)
-    if qlora:
-        model = packages["prepare_model_for_kbit_training"](
-            model, use_gradient_checkpointing=gradient_checkpointing
-        )
     if source_adapter:
         model = packages["PeftModel"].from_pretrained(model, source_adapter, is_trainable=True)
     else:
@@ -207,7 +196,8 @@ def fit_steps(
             yield from loader
 
     iterator = iter(infinite_batches())
-    for update in range(steps):
+    progress = tqdm(range(steps), desc="LoRA updates", dynamic_ncols=True)
+    for update in progress:
         accumulated = 0.0
         for _ in range(gradient_accumulation):
             batch = next(iterator)
@@ -223,6 +213,7 @@ def fit_steps(
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)
         losses.append(accumulated)
+        progress.set_postfix(loss=f"{accumulated:.4f}")
     return losses
 
 

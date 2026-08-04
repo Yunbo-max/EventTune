@@ -14,7 +14,7 @@ from eventttt.splits import stratified_folds
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Support-only CV and temporary per-event QLoRA")
+    parser = argparse.ArgumentParser(description="Support-only CV and temporary per-event LoRA")
     parser.add_argument("--support-manifest", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--source-adapter")
@@ -32,16 +32,14 @@ def main() -> None:
     parser.add_argument("--selection-d4-views", type=int, default=1)
     parser.add_argument("--crop-size", type=int, default=448)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--no-qlora", action="store_true")
     args = parser.parse_args()
 
-    print(json.dumps(preflight(require_gpu=True, require_qlora=not args.no_qlora), indent=2))
+    print(json.dumps(preflight(require_gpu=True), indent=2))
     from peft import get_peft_model_state_dict, set_peft_model_state_dict
 
     support = read_samples(args.support_manifest)
     model, processor = load_model(
         args.model_id,
-        qlora=not args.no_qlora,
         source_adapter=args.source_adapter,
     )
     initial = {

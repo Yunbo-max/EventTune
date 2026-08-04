@@ -8,10 +8,24 @@ RECORD="https://zenodo.org/records/20072020/files"
 mkdir -p "${DESTINATION}"
 download() {
   local name="$1"
-  if [[ ! -f "${DESTINATION}/${name}" ]]; then
-    curl -L --fail --show-error --output "${DESTINATION}/${name}" "${RECORD}/${name}?download=1"
+  local archive="${DESTINATION}/${name}"
+  local partial="${archive}.part"
+  if [[ -f "${archive}" ]] && ! unzip -tq "${archive}" >/dev/null 2>&1; then
+    if [[ -f "${partial}" ]]; then
+      echo "Both incomplete files exist for ${name}; keep the larger one and retry manually." >&2
+      exit 1
+    fi
+    mv "${archive}" "${partial}"
   fi
-  unzip -n -q "${DESTINATION}/${name}" -d "${DESTINATION}"
+  if [[ ! -f "${archive}" ]]; then
+    curl -L --fail --show-error \
+      --retry 8 --retry-all-errors --retry-delay 5 \
+      --continue-at - \
+      --output "${partial}" \
+      "${RECORD}/${name}?download=1"
+    mv "${partial}" "${archive}"
+  fi
+  unzip -n -q "${archive}" -d "${DESTINATION}"
 }
 
 download cvprw26_trainval_instance_labels.zip

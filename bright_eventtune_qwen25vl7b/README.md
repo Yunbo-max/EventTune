@@ -9,8 +9,8 @@ private Hugging Face collections hold durable dataset derivatives and trained
 adapters:
 
 - [EventTune-BRIGHT dataset](https://huggingface.co/datasets/humanlong/EventTune-BRIGHT)
-- [EventTune Qwen2.5-VL-3B adapters](https://huggingface.co/humanlong/EventTune-Qwen2.5-VL-3B)
-- [Qwen2.5-VL-3B base model](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)
+- [EventTune Qwen2.5-VL-7B adapters](https://huggingface.co/humanlong/EventTune-Qwen2.5-VL-7B)
+- [Qwen2.5-VL-7B base model](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)
 - [BRIGHT official release](https://zenodo.org/records/20072020)
 
 Authenticate once, clone the code, choose a PyTorch wheel compatible with the
@@ -18,7 +18,7 @@ node, and restore the persistent artifacts:
 
 ```bash
 git clone https://github.com/Yunbo-max/Remote.git
-cd Remote/bright_eventttt_qwen25vl3b
+cd Remote/bright_eventtune_qwen25vl7b
 
 python3 -m venv .venv
 # Example for a CUDA 12.1-compatible node; select another official PyTorch
@@ -33,9 +33,9 @@ HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh pull
 .venv/bin/python scripts/preflight.py
 ```
 
-`hub_sync.sh pull` restores the prepared dataset artifacts and available model
-adapters. Transformers obtains the immutable base model directly from
-`Qwen/Qwen2.5-VL-3B-Instruct` on the first model run. If the dataset Hub does
+`hub_sync.sh pull` restores `data/manifests/`, `data/splits/`, checksums, and
+available model adapters. Transformers obtains the immutable base model directly from
+`Qwen/Qwen2.5-VL-7B-Instruct` on the first model run. If the dataset Hub does
 not yet contain a required raw asset, follow [Data preparation](#data-preparation)
 to acquire it from the official source and rebuild the derivative.
 
@@ -62,7 +62,7 @@ Disaster-damage models often face a large domain shift at deployment. A new even
 
 This project tests one focused hypothesis:
 
-> Can a source-trained Qwen2.5-VL-3B model improve on an unseen disaster by fitting a small temporary adapter to only a few labeled buildings from that event?
+> Can a source-trained Qwen2.5-VL-7B model improve on an unseen disaster by fitting a small temporary adapter to only a few labeled buildings from that event?
 
 Each example contains:
 
@@ -75,7 +75,7 @@ The primary dataset is BRIGHT. Dataset adapters also exist for xBD and DisasterM
 
 ## What method is implemented
 
-The method is **support-selected event-time QLoRA**, named EventTune. It has seven stages. The Python package retains the historical `eventttt` namespace for compatibility.
+The method is **support-selected event-time LoRA**, named EventTune. It has seven stages. The Python package retains the historical `eventttt` namespace for compatibility.
 
 ### 1. Leakage-safe event split
 
@@ -85,16 +85,18 @@ The split is tile-disjoint: every tile used to construct the support pool is rem
 
 ### 2. Source supervised fine-tuning
 
-`Qwen/Qwen2.5-VL-3B-Instruct` is trained on the source events with label-only supervised loss. The prompt supplies the paired pre/post images and asks for exactly one of the three severity labels.
+`Qwen/Qwen2.5-VL-7B-Instruct` is trained on the source events with label-only supervised loss. The prompt supplies the paired pre/post images and asks for exactly one of the three severity labels.
 
-Training uses 4-bit NF4 QLoRA:
+Training uses standard BF16 LoRA:
 
 - LoRA rank 16, alpha 32, dropout 0.05;
 - adapters on `q_proj`, `k_proj`, `v_proj`, and `o_proj`;
-- bfloat16 computation and double quantization;
-- the base VLM remains frozen.
+- the 7B base VLM remains frozen in bfloat16;
+- only the approximately 10.1 million LoRA parameters are optimized.
 
-QLoRA is used because event adaptation should be small, temporary, and feasible on one commodity GPU. It is an efficiency mechanism, not the research contribution by itself.
+No 4-bit quantization or QLoRA path is used. On the reference RTX A5000 24 GB,
+one 448-pixel paired-image training step peaks at approximately 17.0 GiB
+allocated and 18.5 GiB reserved CUDA memory.
 
 ### 3. Source-only target baseline
 
@@ -134,7 +136,7 @@ The recommended study uses:
 - seeds 0–4;
 - operational support budgets of 12, 24, and 48 examples;
 - target events with different hazards and sensors;
-- a source-only QLoRA baseline and an adapted QLoRA model under identical inference settings.
+- a source-only LoRA baseline and an adapted LoRA model under identical inference settings.
 
 The current two-GPU validation run assigns one independent event to each GPU:
 
@@ -155,7 +157,7 @@ scripts/download_bright.sh
 scripts/prepare_dataset.py
                          BRIGHT, xBD, and DisasterM3 normalization
 scripts/make_splits.py   Event-held-out, tile-disjoint splits
-scripts/train_source.py  Source-event QLoRA SFT
+scripts/train_source.py  Source-event LoRA SFT
 scripts/adapt_event.py   Support-only CV and final event adapter
 scripts/evaluate.py      Candidate scoring and D4 evaluation
 scripts/compare_predictions.py
@@ -182,8 +184,7 @@ python -m venv .venv
 .venv/bin/python scripts/preflight.py
 ```
 
-The preflight command stops early if CUDA, Qwen-VL, PEFT, or the bitsandbytes
-CUDA backend is unavailable.
+The preflight command stops early if CUDA, bfloat16, Qwen-VL, or PEFT is unavailable.
 
 ## Ephemeral compute and persistent assets
 
@@ -195,7 +196,7 @@ services.
 The private Hub repositories are:
 
 - dataset derivatives: `humanlong/EventTune-BRIGHT`;
-- model adapters and run summaries: `humanlong/EventTune-Qwen2.5-VL-3B`.
+- model adapters and run summaries: `humanlong/EventTune-Qwen2.5-VL-7B`.
 
 On a fresh node, clone/pull GitHub, install a PyTorch build compatible with the
 node, and then restore persistent assets:
@@ -204,8 +205,8 @@ node, and then restore persistent assets:
 HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh pull
 ```
 
-Before a node is released, copy approved derived dataset files into `data/hub/`
-and model adapters, metrics, and run metadata into `artifacts/model/`, then run:
+Before a node is released, keep approved manifests/splits under `data/`, and
+copy model adapters, metrics, and run metadata into `artifacts/model/`, then run:
 
 ```bash
 HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh push-data

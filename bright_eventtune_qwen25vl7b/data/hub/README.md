@@ -13,4 +13,4 @@ Raw BRIGHT, xBD, and DisasterM3 data are not mirrored here by default.
 
 Acquisition URLs, expected checksums, and preparation commands live in the
 GitHub repository `Yunbo-max/Remote`, under
-`bright_eventttt_qwen25vl3b/data/README.md` and the project README.
+`bright_eventtune_qwen25vl7b/data/README.md` and the project README.

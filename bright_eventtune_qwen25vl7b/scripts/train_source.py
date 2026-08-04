@@ -10,7 +10,7 @@ from eventttt.qwen import DEFAULT_MODEL, fit_steps, load_model, preflight, train
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Source-event SFT with Qwen2.5-VL-3B QLoRA")
+    parser = argparse.ArgumentParser(description="Source-event SFT with Qwen2.5-VL-7B LoRA")
     parser.add_argument("--train-manifest", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-id", default=DEFAULT_MODEL)
@@ -20,12 +20,11 @@ def main() -> None:
     parser.add_argument("--gradient-accumulation", type=int, default=8)
     parser.add_argument("--crop-size", type=int, default=448)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--no-qlora", action="store_true")
     args = parser.parse_args()
 
-    print(json.dumps(preflight(require_gpu=True, require_qlora=not args.no_qlora), indent=2))
+    print(json.dumps(preflight(require_gpu=True), indent=2))
     samples = read_samples(args.train_manifest)
-    model, processor = load_model(args.model_id, qlora=not args.no_qlora)
+    model, processor = load_model(args.model_id)
     print(json.dumps(trainable_parameter_report(model), indent=2))
     losses = fit_steps(
         model,

@@ -7,4 +7,4 @@ from eventttt.qwen import preflight
 
 
 if __name__ == "__main__":
-    print(json.dumps(preflight(require_gpu=True, require_qlora=True), indent=2))
+    print(json.dumps(preflight(require_gpu=True), indent=2))
