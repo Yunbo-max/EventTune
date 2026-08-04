@@ -17,39 +17,57 @@ EVAL_D4_VIEWS="${EVAL_D4_VIEWS:-8}"
 
 mkdir -p "${RUN_DIR}"
 
-"${PYTHON_BIN}" scripts/train_source.py \
-  --train-manifest "${SPLIT_DIR}/source_train.jsonl" \
-  --steps "${SOURCE_STEPS}" \
-  --gradient-accumulation "${SOURCE_GRADIENT_ACCUMULATION}" \
-  --crop-size "${CROP_SIZE}" \
-  --output-dir "${RUN_DIR}/source_adapter"
+if [[ ! -f "${RUN_DIR}/source_adapter/train_summary.json" ]]; then
+  "${PYTHON_BIN}" scripts/train_source.py \
+    --train-manifest "${SPLIT_DIR}/source_train.jsonl" \
+    --steps "${SOURCE_STEPS}" \
+    --gradient-accumulation "${SOURCE_GRADIENT_ACCUMULATION}" \
+    --crop-size "${CROP_SIZE}" \
+    --output-dir "${RUN_DIR}/source_adapter"
+else
+  echo "resume: source training already complete"
+fi
 
-"${PYTHON_BIN}" scripts/evaluate.py \
-  --manifest "${SPLIT_DIR}/target_query.jsonl" \
-  --adapter "${RUN_DIR}/source_adapter" \
-  --d4-views "${EVAL_D4_VIEWS}" \
-  --crop-size "${CROP_SIZE}" \
-  --output-dir "${RUN_DIR}/source_eval"
+if [[ ! -f "${RUN_DIR}/source_eval/metrics.json" ]]; then
+  "${PYTHON_BIN}" scripts/evaluate.py \
+    --manifest "${SPLIT_DIR}/target_query.jsonl" \
+    --adapter "${RUN_DIR}/source_adapter" \
+    --d4-views "${EVAL_D4_VIEWS}" \
+    --crop-size "${CROP_SIZE}" \
+    --output-dir "${RUN_DIR}/source_eval"
+else
+  echo "resume: source evaluation already complete"
+fi
 
 ADAPT_ARGUMENTS=()
 if [[ -n "${FIXED_EVENT_STEPS}" ]]; then
   ADAPT_ARGUMENTS+=(--fixed-steps "${FIXED_EVENT_STEPS}")
 fi
-"${PYTHON_BIN}" scripts/adapt_event.py \
-  --support-manifest "${SPLIT_DIR}/target_support.jsonl" \
-  --source-adapter "${RUN_DIR}/source_adapter" \
-  --output-dir "${RUN_DIR}/event_adapter" \
-  --crop-size "${CROP_SIZE}" \
-  "${ADAPT_ARGUMENTS[@]}"
+if [[ ! -f "${RUN_DIR}/event_adapter/selection.json" ]]; then
+  "${PYTHON_BIN}" scripts/adapt_event.py \
+    --support-manifest "${SPLIT_DIR}/target_support.jsonl" \
+    --source-adapter "${RUN_DIR}/source_adapter" \
+    --output-dir "${RUN_DIR}/event_adapter" \
+    --crop-size "${CROP_SIZE}" \
+    "${ADAPT_ARGUMENTS[@]}"
+else
+  echo "resume: event adaptation already complete"
+fi
 
-"${PYTHON_BIN}" scripts/evaluate.py \
-  --manifest "${SPLIT_DIR}/target_query.jsonl" \
-  --adapter "${RUN_DIR}/event_adapter" \
-  --d4-views "${EVAL_D4_VIEWS}" \
-  --crop-size "${CROP_SIZE}" \
-  --output-dir "${RUN_DIR}/event_eval"
+if [[ ! -f "${RUN_DIR}/event_eval/metrics.json" ]]; then
+  "${PYTHON_BIN}" scripts/evaluate.py \
+    --manifest "${SPLIT_DIR}/target_query.jsonl" \
+    --adapter "${RUN_DIR}/event_adapter" \
+    --d4-views "${EVAL_D4_VIEWS}" \
+    --crop-size "${CROP_SIZE}" \
+    --output-dir "${RUN_DIR}/event_eval"
+else
+  echo "resume: event evaluation already complete"
+fi
 
-"${PYTHON_BIN}" scripts/compare_predictions.py \
-  --baseline "${RUN_DIR}/source_eval/predictions.jsonl" \
-  --adapted "${RUN_DIR}/event_eval/predictions.jsonl" \
-  --output "${RUN_DIR}/adaptation_gain.json"
+if [[ ! -f "${RUN_DIR}/adaptation_gain.json" ]]; then
+  "${PYTHON_BIN}" scripts/compare_predictions.py \
+    --baseline "${RUN_DIR}/source_eval/predictions.jsonl" \
+    --adapted "${RUN_DIR}/event_eval/predictions.jsonl" \
+    --output "${RUN_DIR}/adaptation_gain.json"
+fi

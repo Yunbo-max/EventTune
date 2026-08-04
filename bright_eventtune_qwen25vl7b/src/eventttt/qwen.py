@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from tqdm.auto import tqdm
 
 from .aggregation import product_of_experts
@@ -116,6 +117,15 @@ class SampleDataset(Dataset):
         return self.samples[index]
 
 
+def class_balanced_weights(samples: Sequence[Sample]) -> torch.Tensor:
+    if not samples:
+        raise ValueError("Cannot sample from an empty dataset")
+    counts = Counter(sample.label for sample in samples)
+    return torch.tensor(
+        [1.0 / counts[sample.label] for sample in samples], dtype=torch.double
+    )
+
+
 def _find_last_subsequence(sequence: Sequence[int], query: Sequence[int]) -> int:
     for start in range(len(sequence) - len(query), -1, -1):
         if list(sequence[start : start + len(query)]) == list(query):
@@ -178,10 +188,17 @@ def fit_steps(
     if steps <= 0:
         return []
     torch.manual_seed(seed)
+    generator = torch.Generator().manual_seed(seed)
+    sampler = WeightedRandomSampler(
+        class_balanced_weights(samples),
+        num_samples=len(samples),
+        replacement=True,
+        generator=generator,
+    )
     loader = DataLoader(
         SampleDataset(samples),
         batch_size=batch_size,
-        shuffle=True,
+        sampler=sampler,
         collate_fn=SFTCollator(processor, crop_size),
     )
     optimizer = torch.optim.AdamW(
@@ -217,11 +234,11 @@ def fit_steps(
     return losses
 
 
-def _candidate_batch(processor, sample: Sample, pre, post):
+def _candidate_batch(processor, sample: Sample, pre, post, candidate_labels=DAMAGE_LABELS):
     process_vision_info = _require_training_packages()["process_vision_info"]
     variants = []
     starts = []
-    for label in DAMAGE_LABELS:
+    for label in candidate_labels:
         variant = Sample.from_dict({**sample.to_dict(), "label": label, "label_id": DAMAGE_LABELS.index(label)})
         chat = messages(variant, True, pre, post)
         text = processor.apply_chat_template(chat, tokenize=False, add_generation_prompt=False)
@@ -249,17 +266,21 @@ def score_sample(model, processor, sample: Sample, d4_views: int = 1, crop_size:
     view_scores = []
     device = next(model.parameters()).device
     for pre_view, post_view, _ in d4_pair(pre, post, d4_views):
-        batch, spans = _candidate_batch(processor, sample, pre_view, post_view)
-        batch = {key: value.to(device) for key, value in batch.items()}
-        logits = model(**batch).logits.float()
-        log_probs = torch.log_softmax(logits[:, :-1], dim=-1)
         candidate_scores = []
-        for row_index, (start, valid) in enumerate(spans):
-            targets = batch["input_ids"][row_index, start:valid]
-            token_log_probs = log_probs[row_index, start - 1 : valid - 1].gather(
-                -1, targets.unsqueeze(-1)
+        # Score labels sequentially. Batching all candidates triples the paired
+        # image tensors and exceeds 24 GB during BF16 7B evaluation.
+        for label in DAMAGE_LABELS:
+            batch, spans = _candidate_batch(
+                processor, sample, pre_view, post_view, candidate_labels=(label,)
             )
-            candidate_scores.append(float(token_log_probs.sum()))
+            batch = {key: value.to(device) for key, value in batch.items()}
+            logits = model(**batch).logits.float()
+            start, valid = spans[0]
+            targets = batch["input_ids"][0, start:valid]
+            token_log_probs = torch.log_softmax(logits[0, start - 1 : valid - 1], dim=-1)
+            score = token_log_probs.gather(-1, targets.unsqueeze(-1)).sum()
+            candidate_scores.append(float(score))
+            del batch, logits, token_log_probs
         view_scores.append(candidate_scores)
     mean_log_score = np.mean(np.asarray(view_scores, dtype=np.float64), axis=0)
     probabilities = product_of_experts(view_scores)
@@ -278,4 +299,8 @@ def score_sample(model, processor, sample: Sample, d4_views: int = 1, crop_size:
 
 
 def score_samples(model, processor, samples: Iterable[Sample], d4_views: int = 1, crop_size: int = 448):
-    return [score_sample(model, processor, sample, d4_views, crop_size) for sample in samples]
+    rows = list(samples)
+    return [
+        score_sample(model, processor, sample, d4_views, crop_size)
+        for sample in tqdm(rows, desc="Scoring", dynamic_ncols=True)
+    ]

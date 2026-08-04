@@ -93,6 +93,8 @@ Training uses standard BF16 LoRA:
 - adapters on `q_proj`, `k_proj`, `v_proj`, and `o_proj`;
 - the 7B base VLM remains frozen in bfloat16;
 - only the approximately 10.1 million LoRA parameters are optimized.
+- source examples use inverse-frequency sampling to prevent the heavily
+  imbalanced BRIGHT labels from collapsing short runs to `intact`.
 
 No 4-bit quantization or QLoRA path is used. On the reference RTX A5000 24 GB,
 one 448-pixel paired-image training step peaks at approximately 17.0 GiB
