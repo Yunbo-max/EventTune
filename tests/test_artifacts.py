@@ -30,6 +30,10 @@ def make_complete_run(path):
     (path / "source_diagnostic_eval" / "metrics.json").write_text(
         '{"macro_f1": 0.5}\n', encoding="utf-8"
     )
+    (path / "source_gate").mkdir()
+    (path / "source_gate" / "gate.json").write_text(
+        '{"passed": true}\n', encoding="utf-8"
+    )
 
 
 def test_portable_value_rewrites_known_and_unknown_absolute_paths():
@@ -56,6 +60,7 @@ def test_export_run_is_complete_portable_and_idempotent(tmp_path):
     assert launcher["command"][1] == "${EVENTTUNE_ROOT}/scripts/run_event.sh"
     assert launcher["log"] == "${EVENTTUNE_ROOT}/runs/event/run/launcher.log"
     assert (destination / "source_diagnostic_eval" / "metrics.json").is_file()
+    assert (destination / "source_gate" / "gate.json").is_file()
     manifest = json.loads(
         (destination / "export_manifest.json").read_text(encoding="utf-8")
     )

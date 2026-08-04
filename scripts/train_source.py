@@ -5,6 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
+from eventttt.gates import exclude_reserved_samples
 from eventttt.io import read_samples, write_json
 from eventttt.qwen import DEFAULT_MODEL, fit_steps, load_model, preflight, trainable_parameter_report
 
@@ -12,6 +13,12 @@ from eventttt.qwen import DEFAULT_MODEL, fit_steps, load_model, preflight, train
 def main() -> None:
     parser = argparse.ArgumentParser(description="Source-event SFT with Qwen2.5-VL-7B LoRA")
     parser.add_argument("--train-manifest", required=True)
+    parser.add_argument(
+        "--exclude-manifest",
+        action="append",
+        default=[],
+        help="manifest whose sample IDs are reserved from source training",
+    )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-id", default=DEFAULT_MODEL)
     parser.add_argument("--steps", type=int, default=1000)
@@ -29,6 +36,12 @@ def main() -> None:
 
     print(json.dumps(preflight(require_gpu=True), indent=2))
     samples = read_samples(args.train_manifest)
+    reserved = [
+        sample
+        for manifest in args.exclude_manifest
+        for sample in read_samples(manifest)
+    ]
+    samples, excluded_examples = exclude_reserved_samples(samples, reserved)
     model, processor = load_model(args.model_id)
     print(json.dumps(trainable_parameter_report(model), indent=2))
     losses = fit_steps(
@@ -52,6 +65,7 @@ def main() -> None:
         {
             "model_id": args.model_id,
             "examples": len(samples),
+            "excluded_examples": excluded_examples,
             "steps": args.steps,
             "final_loss": losses[-1] if losses else None,
             "arguments": vars(args),

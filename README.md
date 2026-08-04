@@ -153,6 +153,12 @@ The run is a failed systems diagnostic, not positive evidence for the method.
 The corrected protocol uses exact per-update class cycling and must pass a
 balanced source-domain gate before another full target evaluation.
 
+The design review that motivated the gate and stricter experiment protocol is
+documented in
+[`reports/20260804-arc-prize-2025-review.md`](reports/20260804-arc-prize-2025-review.md).
+It focuses on ARC Prize 2025 / ARC-AGI-2; ARC Prize 2024 is used only as a
+methodological predecessor.
+
 ## Repository layout
 
 ```text
@@ -281,10 +287,22 @@ target_query.jsonl
 split.json
 ```
 
+Create a source-only event/label-balanced gate from the source manifest. The
+gate samples are automatically excluded from training when passed to the run:
+
+```bash
+.venv/bin/python scripts/make_source_gate.py \
+  --manifest data/splits/bright_4shot/hawaii-wildfire/seed_0/source_train.jsonl \
+  --output data/splits/diagnostics/hawaii-source-event-label-150.jsonl \
+  --per-event-label 5 \
+  --seed 20260804
+```
+
 ## Run one complete event experiment
 
 ```bash
 SOURCE_GRADIENT_ACCUMULATION=6 \
+SOURCE_GATE_MANIFEST=data/splits/diagnostics/hawaii-source-event-label-150.jsonl \
 CROP_SIZE=448 \
 EVAL_D4_VIEWS=8 \
 bash scripts/run_event.sh \
@@ -294,6 +312,9 @@ bash scripts/run_event.sh \
 ```
 
 The pipeline automatically performs source training, baseline evaluation, support-only selection, final event adaptation, adapted evaluation, and comparison.
+When a source gate is configured, it first requires macro-F1 at least `0.2`
+and at least two predicted classes. A failed gate stops before any target-query
+evaluation, saving GPU time without inspecting target labels.
 
 For one-shot-per-class support, cross-validation is not identifiable. Use a step count pre-registered on source/meta-events:
 

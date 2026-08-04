@@ -19,11 +19,19 @@ def main() -> None:
     parser.add_argument("--crop-size", type=int, default=448)
     parser.add_argument("--d4-views", type=int, default=4)
     parser.add_argument("--fixed-event-steps", type=int)
+    parser.add_argument("--source-gate-manifest")
+    parser.add_argument("--source-gate-min-macro-f1", type=float, default=0.2)
+    parser.add_argument("--source-gate-min-classes", type=int, default=2)
     args = parser.parse_args()
 
     project = Path(__file__).resolve().parents[1]
     split_dir = Path(args.split_dir).resolve()
     run_dir = Path(args.run_dir).resolve()
+    source_gate = (
+        str(Path(args.source_gate_manifest).resolve())
+        if args.source_gate_manifest
+        else ""
+    )
     run_dir.mkdir(parents=True, exist_ok=True)
     git_revision = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -51,6 +59,9 @@ def main() -> None:
             "SOURCE_GRADIENT_ACCUMULATION": str(args.source_gradient_accumulation),
             "CROP_SIZE": str(args.crop_size),
             "EVAL_D4_VIEWS": str(args.d4_views),
+            "SOURCE_GATE_MANIFEST": source_gate,
+            "SOURCE_GATE_MIN_MACRO_F1": str(args.source_gate_min_macro_f1),
+            "SOURCE_GATE_MIN_CLASSES": str(args.source_gate_min_classes),
         }
     )
     log_path = run_dir / "launcher.log"
@@ -73,6 +84,9 @@ def main() -> None:
         "source_gradient_accumulation": args.source_gradient_accumulation,
         "crop_size": args.crop_size,
         "d4_views": args.d4_views,
+        "source_gate_manifest": source_gate or None,
+        "source_gate_min_macro_f1": args.source_gate_min_macro_f1,
+        "source_gate_min_classes": args.source_gate_min_classes,
         "log": str(log_path),
     }
     (run_dir / "launcher.json").write_text(

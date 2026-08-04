@@ -37,8 +37,10 @@ that adaptation was harmful.
 
 ## Source-domain diagnostic
 
-A separately selected diagnostic set contains 150 examples: 10 source events
-times 3 labels times 5 examples. The source adapter again predicted every item
+A separately selected post-hoc diagnostic set contains 150 examples: 10 source
+events times 3 labels times 5 examples. It was not excluded from this first
+run's training pool and is used only to localize the failure, not for model
+selection. The source adapter again predicted every item
 as `intact` (macro-F1 `0.166667`, balanced accuracy `0.333333`, NLL
 `1.214619`). This rules out an explanation based only on Hawaii domain shift.
 

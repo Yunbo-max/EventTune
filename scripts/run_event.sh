@@ -14,18 +14,43 @@ PYTHON_BIN="${PYTHON_BIN:-.venv/bin/python}"
 SOURCE_GRADIENT_ACCUMULATION="${SOURCE_GRADIENT_ACCUMULATION:-6}"
 CROP_SIZE="${CROP_SIZE:-448}"
 EVAL_D4_VIEWS="${EVAL_D4_VIEWS:-8}"
+SOURCE_GATE_MANIFEST="${SOURCE_GATE_MANIFEST:-}"
+SOURCE_GATE_MIN_MACRO_F1="${SOURCE_GATE_MIN_MACRO_F1:-0.2}"
+SOURCE_GATE_MIN_CLASSES="${SOURCE_GATE_MIN_CLASSES:-2}"
 
 mkdir -p "${RUN_DIR}"
 
 if [[ ! -f "${RUN_DIR}/source_adapter/train_summary.json" ]]; then
-  "${PYTHON_BIN}" scripts/train_source.py \
-    --train-manifest "${SPLIT_DIR}/source_train.jsonl" \
-    --steps "${SOURCE_STEPS}" \
-    --gradient-accumulation "${SOURCE_GRADIENT_ACCUMULATION}" \
-    --crop-size "${CROP_SIZE}" \
+  SOURCE_ARGUMENTS=(
+    --train-manifest "${SPLIT_DIR}/source_train.jsonl"
+    --steps "${SOURCE_STEPS}"
+    --gradient-accumulation "${SOURCE_GRADIENT_ACCUMULATION}"
+    --crop-size "${CROP_SIZE}"
     --output-dir "${RUN_DIR}/source_adapter"
+  )
+  if [[ -n "${SOURCE_GATE_MANIFEST}" ]]; then
+    SOURCE_ARGUMENTS+=(--exclude-manifest "${SOURCE_GATE_MANIFEST}")
+  fi
+  "${PYTHON_BIN}" scripts/train_source.py "${SOURCE_ARGUMENTS[@]}"
 else
   echo "resume: source training already complete"
+fi
+
+if [[ -n "${SOURCE_GATE_MANIFEST}" ]]; then
+  if [[ ! -f "${RUN_DIR}/source_gate/metrics.json" ]]; then
+    "${PYTHON_BIN}" scripts/evaluate.py \
+      --manifest "${SOURCE_GATE_MANIFEST}" \
+      --adapter "${RUN_DIR}/source_adapter" \
+      --d4-views 1 \
+      --crop-size "${CROP_SIZE}" \
+      --output-dir "${RUN_DIR}/source_gate"
+  fi
+  "${PYTHON_BIN}" scripts/check_source_gate.py \
+    --metrics "${RUN_DIR}/source_gate/metrics.json" \
+    --predictions "${RUN_DIR}/source_gate/predictions.jsonl" \
+    --output "${RUN_DIR}/source_gate/gate.json" \
+    --minimum-macro-f1 "${SOURCE_GATE_MIN_MACRO_F1}" \
+    --minimum-predicted-classes "${SOURCE_GATE_MIN_CLASSES}"
 fi
 
 if [[ ! -f "${RUN_DIR}/source_eval/metrics.json" ]]; then
