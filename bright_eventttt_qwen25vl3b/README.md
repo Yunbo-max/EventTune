@@ -1,6 +1,60 @@
-# EventTTT-Qwen2.5-VL-3B
+# EventTune
 
 Few-shot event-time adaptation of a small vision-language model for building-damage assessment from paired remote-sensing images.
+
+## Quick start on a fresh GPU node
+
+GitHub is the source of truth for code and reproducibility instructions. The
+private Hugging Face collections hold durable dataset derivatives and trained
+adapters:
+
+- [EventTune-BRIGHT dataset](https://huggingface.co/datasets/humanlong/EventTune-BRIGHT)
+- [EventTune Qwen2.5-VL-3B adapters](https://huggingface.co/humanlong/EventTune-Qwen2.5-VL-3B)
+- [Qwen2.5-VL-3B base model](https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct)
+- [BRIGHT official release](https://zenodo.org/records/20072020)
+
+Authenticate once, clone the code, choose a PyTorch wheel compatible with the
+node, and restore the persistent artifacts:
+
+```bash
+git clone https://github.com/Yunbo-max/Remote.git
+cd Remote/bright_eventttt_qwen25vl3b
+
+python3 -m venv .venv
+# Example for a CUDA 12.1-compatible node; select another official PyTorch
+# wheel index when the host driver requires it.
+.venv/bin/pip install torch torchvision \
+  --index-url https://download.pytorch.org/whl/cu121
+.venv/bin/pip install -e '.[train,test]'
+
+.venv/bin/hf auth login
+HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh pull
+.venv/bin/pytest
+.venv/bin/python scripts/preflight.py
+```
+
+`hub_sync.sh pull` restores the prepared dataset artifacts and available model
+adapters. Transformers obtains the immutable base model directly from
+`Qwen/Qwen2.5-VL-3B-Instruct` on the first model run. If the dataset Hub does
+not yet contain a required raw asset, follow [Data preparation](#data-preparation)
+to acquire it from the official source and rebuild the derivative.
+
+Run a prepared event split with:
+
+```bash
+bash scripts/run_event.sh \
+  data/splits/bright_4shot/TARGET_EVENT/seed_0 \
+  runs/TARGET_EVENT/seed_0 \
+  1000
+```
+
+Before releasing an ephemeral node, publish approved outputs and push code:
+
+```bash
+HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh push-data
+HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh push-model
+git add -A && git commit -m "Describe the experiment update" && git push
+```
 
 ## What this project studies
 
@@ -21,7 +75,7 @@ The primary dataset is BRIGHT. Dataset adapters also exist for xBD and DisasterM
 
 ## What method is implemented
 
-The method is **support-selected event-time QLoRA**, abbreviated here as EventTTT. It has seven stages.
+The method is **support-selected event-time QLoRA**, named EventTune. It has seven stages. The Python package retains the historical `eventttt` namespace for compatibility.
 
 ### 1. Leakage-safe event split
 
@@ -113,28 +167,23 @@ src/eventttt/            Reusable Python implementation
 tests/                   Unit tests
 ```
 
-## Setup
+## Detailed setup
 
 Python 3.10+ and an NVIDIA GPU are expected.
 
-```bash
-cd experiments/bright_eventttt_qwen25vl3b
-python -m venv .venv
-.venv/bin/pip install torch --index-url https://download.pytorch.org/whl/cu121
-.venv/bin/pip install -e '.[train,test]'
-.venv/bin/python scripts/preflight.py
-```
-
-Use a PyTorch CUDA build compatible with the host NVIDIA driver. The training scripts stop early if CUDA, Qwen-VL, PEFT, or the bitsandbytes CUDA backend is unavailable.
-
-Do not assume every compute node has the same CUDA stack. Pick a compatible
-PyTorch wheel index for that machine; for example, this host uses CUDA 12.1:
+Use a PyTorch CUDA build compatible with the host NVIDIA driver. Do not assume
+every compute node has the same CUDA stack. For example, a CUDA 12.1-compatible
+node can use:
 
 ```bash
 python -m venv .venv
 .venv/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 .venv/bin/pip install -e '.[train,test]'
+.venv/bin/python scripts/preflight.py
 ```
+
+The preflight command stops early if CUDA, Qwen-VL, PEFT, or the bitsandbytes
+CUDA backend is unavailable.
 
 ## Ephemeral compute and persistent assets
 
@@ -143,29 +192,29 @@ instructions. Hugging Face stores durable dataset derivatives and model
 artifacts. A GPU node is disposable and should be recoverable from those two
 services.
 
-The default private Hub repositories are:
+The private Hub repositories are:
 
-- dataset derivatives: `humanlong/eventttt-bright-assets`;
-- model adapters and run summaries: `humanlong/eventttt-qwen25vl3b`.
+- dataset derivatives: `humanlong/EventTune-BRIGHT`;
+- model adapters and run summaries: `humanlong/EventTune-Qwen2.5-VL-3B`.
 
 On a fresh node, clone/pull GitHub, install a PyTorch build compatible with the
 node, and then restore persistent assets:
 
 ```bash
-HF_CLI="$HOME/.local/bin/hf" bash scripts/hub_sync.sh pull
+HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh pull
 ```
 
 Before a node is released, copy approved derived dataset files into `data/hub/`
 and model adapters, metrics, and run metadata into `artifacts/model/`, then run:
 
 ```bash
-HF_CLI="$HOME/.local/bin/hf" bash scripts/hub_sync.sh push-data
-HF_CLI="$HOME/.local/bin/hf" bash scripts/hub_sync.sh push-model
+HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh push-data
+HF_CLI=.venv/bin/hf bash scripts/hub_sync.sh push-model
 git status
 ```
 
-Override either Hub destination with `EVENTTTT_DATASET_REPO` or
-`EVENTTTT_MODEL_REPO`. Do not upload BRIGHT, xBD, or DisasterM3 raw archives
+Override either Hub destination with `EVENTTUNE_DATASET_REPO` or
+`EVENTTUNE_MODEL_REPO`. Do not upload BRIGHT, xBD, or DisasterM3 raw archives
 unless their distribution terms explicitly permit it. The official acquisition
 locations and checksums are documented in `data/README.md`; the generated
 manifests, splits, checksums, and permitted derivatives belong in the dataset

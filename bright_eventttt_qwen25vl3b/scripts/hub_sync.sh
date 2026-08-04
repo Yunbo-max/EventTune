@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ACTION="${1:-pull}"
-DATASET_REPO="${EVENTTTT_DATASET_REPO:-humanlong/eventttt-bright-assets}"
-MODEL_REPO="${EVENTTTT_MODEL_REPO:-humanlong/eventttt-qwen25vl3b}"
+DATASET_REPO="${EVENTTUNE_DATASET_REPO:-humanlong/EventTune-BRIGHT}"
+MODEL_REPO="${EVENTTUNE_MODEL_REPO:-humanlong/EventTune-Qwen2.5-VL-3B}"
 HF="${HF_CLI:-hf}"
 
 case "${ACTION}" in
@@ -25,4 +25,3 @@ case "${ACTION}" in
     exit 2
     ;;
 esac
-
