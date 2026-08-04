@@ -127,6 +127,50 @@ python -m venv .venv
 
 Use a PyTorch CUDA build compatible with the host NVIDIA driver. The training scripts stop early if CUDA, Qwen-VL, PEFT, or the bitsandbytes CUDA backend is unavailable.
 
+Do not assume every compute node has the same CUDA stack. Pick a compatible
+PyTorch wheel index for that machine; for example, this host uses CUDA 12.1:
+
+```bash
+python -m venv .venv
+.venv/bin/pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+.venv/bin/pip install -e '.[train,test]'
+```
+
+## Ephemeral compute and persistent assets
+
+GitHub is the source of truth for code, configuration, and reproduction
+instructions. Hugging Face stores durable dataset derivatives and model
+artifacts. A GPU node is disposable and should be recoverable from those two
+services.
+
+The default private Hub repositories are:
+
+- dataset derivatives: `humanlong/eventttt-bright-assets`;
+- model adapters and run summaries: `humanlong/eventttt-qwen25vl3b`.
+
+On a fresh node, clone/pull GitHub, install a PyTorch build compatible with the
+node, and then restore persistent assets:
+
+```bash
+HF_CLI="$HOME/.local/bin/hf" bash scripts/hub_sync.sh pull
+```
+
+Before a node is released, copy approved derived dataset files into `data/hub/`
+and model adapters, metrics, and run metadata into `artifacts/model/`, then run:
+
+```bash
+HF_CLI="$HOME/.local/bin/hf" bash scripts/hub_sync.sh push-data
+HF_CLI="$HOME/.local/bin/hf" bash scripts/hub_sync.sh push-model
+git status
+```
+
+Override either Hub destination with `EVENTTTT_DATASET_REPO` or
+`EVENTTTT_MODEL_REPO`. Do not upload BRIGHT, xBD, or DisasterM3 raw archives
+unless their distribution terms explicitly permit it. The official acquisition
+locations and checksums are documented in `data/README.md`; the generated
+manifests, splits, checksums, and permitted derivatives belong in the dataset
+repository.
+
 ## Data preparation
 
 Download only the public BRIGHT instance labels:

@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Large/reproducible assets live outside Git.
+data/raw/
+data/crops/
+data/manifests/
+data/splits/
+runs/
+artifacts/
+logs/
+
