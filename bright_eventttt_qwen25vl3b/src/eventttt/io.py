@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Iterable, Iterator
 
@@ -32,7 +33,12 @@ def write_samples(path: str | Path, samples: Iterable[Sample]) -> int:
     count = 0
     with output.open("w", encoding="utf-8") as handle:
         for sample in samples:
-            handle.write(json.dumps(sample.to_dict(), ensure_ascii=False) + "\n")
+            row = sample.to_dict()
+            for key in ("pre_image", "post_image", "mask_path"):
+                value = row.get(key)
+                if value is not None and Path(value).is_absolute():
+                    row[key] = os.path.relpath(value, start=output.parent.resolve())
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
             count += 1
     return count
 

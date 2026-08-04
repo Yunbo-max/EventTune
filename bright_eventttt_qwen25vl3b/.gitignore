@@ -9,6 +9,7 @@ data/raw/
 data/crops/
 data/manifests/
 data/splits/
+data/smoke/
 data/hub/.cache/
 data/hub/.gitattributes
 runs/
