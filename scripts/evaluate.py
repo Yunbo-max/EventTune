@@ -15,9 +15,10 @@ from eventttt.qwen import DEFAULT_MODEL, load_model, preflight, score_sample
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate an adapter with D4 product-of-experts")
     parser.add_argument("--manifest", required=True)
-    parser.add_argument("--adapter", required=True)
+    parser.add_argument("--adapter", default="", help="LoRA adapter path; leave empty for base model")
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-id", default=DEFAULT_MODEL)
+    parser.add_argument("--no-lora", action="store_true", help="Evaluate raw base model without any LoRA")
     parser.add_argument("--d4-views", type=int, default=8)
     parser.add_argument("--crop-size", type=int, default=448)
     args = parser.parse_args()
@@ -36,8 +37,9 @@ def main() -> None:
         print(f"resume: {len(completed_rows)} predictions complete, {len(pending)} remaining")
     model, processor = load_model(
         args.model_id,
-        source_adapter=args.adapter,
+        source_adapter=args.adapter or None,
         gradient_checkpointing=False,
+        use_lora=not args.no_lora,
     )
     with predictions.open("a", encoding="utf-8", buffering=1) as handle:
         for sample in tqdm(pending, desc="Scoring", dynamic_ncols=True):

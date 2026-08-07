@@ -69,14 +69,17 @@ def load_model(
     model_id: str = DEFAULT_MODEL,
     source_adapter: str | None = None,
     gradient_checkpointing: bool = True,
+    use_lora: bool = True,
 ):
     packages = _require_training_packages()
     processor = packages["AutoProcessor"].from_pretrained(model_id)
     kwargs = {"torch_dtype": torch.bfloat16, "device_map": "auto"}
     model = packages["Model"].from_pretrained(model_id, **kwargs)
     if source_adapter:
+        if not use_lora:
+            raise ValueError("source_adapter requires LoRA to be enabled")
         model = packages["PeftModel"].from_pretrained(model, source_adapter, is_trainable=True)
-    else:
+    elif use_lora:
         config = packages["LoraConfig"](
             r=16,
             lora_alpha=32,

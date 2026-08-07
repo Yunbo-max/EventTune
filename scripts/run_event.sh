@@ -17,6 +17,7 @@ EVAL_D4_VIEWS="${EVAL_D4_VIEWS:-8}"
 SOURCE_GATE_MANIFEST="${SOURCE_GATE_MANIFEST:-}"
 SOURCE_GATE_MIN_MACRO_F1="${SOURCE_GATE_MIN_MACRO_F1:-0.2}"
 SOURCE_GATE_MIN_CLASSES="${SOURCE_GATE_MIN_CLASSES:-2}"
+RUN_ORIGINAL_EVAL="${RUN_ORIGINAL_EVAL:-0}"
 
 mkdir -p "${RUN_DIR}"
 
@@ -51,6 +52,17 @@ if [[ -n "${SOURCE_GATE_MANIFEST}" ]]; then
     --output "${RUN_DIR}/source_gate/gate.json" \
     --minimum-macro-f1 "${SOURCE_GATE_MIN_MACRO_F1}" \
     --minimum-predicted-classes "${SOURCE_GATE_MIN_CLASSES}"
+fi
+
+if [[ "${RUN_ORIGINAL_EVAL}" == "1" ]]; then
+  if [[ ! -f "${RUN_DIR}/original_eval/metrics.json" ]]; then
+    "${PYTHON_BIN}" scripts/evaluate.py \
+      --manifest "${SPLIT_DIR}/target_query.jsonl" \
+      --no-lora \
+      --d4-views "${EVAL_D4_VIEWS}" \
+      --crop-size "${CROP_SIZE}" \
+      --output-dir "${RUN_DIR}/original_eval"
+  fi
 fi
 
 if [[ ! -f "${RUN_DIR}/source_eval/metrics.json" ]]; then
@@ -95,4 +107,20 @@ if [[ ! -f "${RUN_DIR}/adaptation_gain.json" ]]; then
     --baseline "${RUN_DIR}/source_eval/predictions.jsonl" \
     --adapted "${RUN_DIR}/event_eval/predictions.jsonl" \
     --output "${RUN_DIR}/adaptation_gain.json"
+fi
+
+if [[ -f "${RUN_DIR}/original_eval/metrics.json" ]]; then
+  if [[ ! -f "${RUN_DIR}/original_vs_source.json" ]]; then
+    "${PYTHON_BIN}" scripts/compare_predictions.py \
+      --baseline "${RUN_DIR}/original_eval/predictions.jsonl" \
+      --adapted "${RUN_DIR}/source_eval/predictions.jsonl" \
+      --output "${RUN_DIR}/original_vs_source.json"
+  fi
+
+  if [[ -f "${RUN_DIR}/event_eval/metrics.json" && ! -f "${RUN_DIR}/original_vs_event.json" ]]; then
+    "${PYTHON_BIN}" scripts/compare_predictions.py \
+      --baseline "${RUN_DIR}/original_eval/predictions.jsonl" \
+      --adapted "${RUN_DIR}/event_eval/predictions.jsonl" \
+      --output "${RUN_DIR}/original_vs_event.json"
+  fi
 fi
