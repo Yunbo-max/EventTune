@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 
 from eventttt.kv_ttt import (
+    KVGradientCollector,
     ResidualKVController,
+    _disable_input_require_grads,
     build_post_image_mask_fn,
     default_layers,
     discover_language_decoder_kv,
@@ -138,3 +140,59 @@ def test_discover_regex_through_nested_wrapper():
     assert count == 4
     assert sorted({layer_id for layer_id, _, _ in found}) == [0, 1, 2, 3]
     assert len(found) == 8
+
+
+def test_kv_collector_close_unregisters_hooks():
+    lm = nn.Module()
+    layers = nn.ModuleList()
+    layer = nn.Module()
+    layer.self_attn = nn.Module()
+    layer.self_attn.k_proj = nn.Linear(8, 8)
+    layer.self_attn.v_proj = nn.Linear(8, 8)
+    layers.append(layer)
+    lm.layers = layers
+
+    outer = nn.Module()
+    outer.base_model = nn.Module()
+    outer.base_model.language_model = lm
+    modules, _ = discover_language_decoder_kv(outer)
+    assert len(modules) == 2
+    collector = KVGradientCollector(modules)
+    assert len(collector.handles) == 2
+    assert all(len(m._forward_hooks) == 1 for _, _, m in modules)
+    collector.close()
+    assert collector.handles == []
+    assert all(len(m._forward_hooks) == 0 for _, _, m in modules)
+
+
+def test_controller_close_unregisters_hooks():
+    dim, rank = 8, 2
+    proj = nn.Linear(dim, dim, bias=False)
+    basis = torch.linalg.qr(torch.randn(dim, dim))[0][:, :rank]
+    controller = ResidualKVController([(0, "K", proj)], {(0, "K"): basis}, rank=rank)
+    assert len(proj._forward_hooks) == 1
+    controller.close()
+    assert controller._hooks == []
+    assert len(proj._forward_hooks) == 0
+
+
+def test_disable_input_require_grads_is_guarded():
+    plain = nn.Linear(2, 2)
+    _disable_input_require_grads(plain)
+
+    class Boom:
+        def disable_input_require_grads(self):
+            raise AttributeError("no hook registered")
+
+    _disable_input_require_grads(Boom())
+
+    class Removes:
+        def __init__(self):
+            self.called = False
+
+        def disable_input_require_grads(self):
+            self.called = True
+
+    target = Removes()
+    _disable_input_require_grads(target)
+    assert target.called

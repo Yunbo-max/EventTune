@@ -206,12 +206,8 @@ class SFTCollator:
             )["input_ids"]
             ids = batch["input_ids"][row_index].tolist()
             start = _find_last_subsequence(ids, answer_ids)
-            last_valid = int(
-                torch.nonzero(batch["attention_mask"][row_index], as_tuple=False)[-1]
-            ) + 1
-            labels[row_index, start:last_valid] = batch["input_ids"][
-                row_index, start:last_valid
-            ]
+            end = start + len(answer_ids)
+            labels[row_index, start:end] = batch["input_ids"][row_index, start:end]
         batch["labels"] = labels
         return batch
 

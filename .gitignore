@@ -12,6 +12,13 @@ data/splits/
 data/smoke/
 data/hub/.cache/
 data/hub/.gitattributes
+data/bright.jsonl
+data/prepared/
+data/hawaii/
 runs/
 artifacts/
 logs/
+
+# Regenerable paper build artifacts (metrics/crops stay local).
+paper/tables/
+paper/figures/

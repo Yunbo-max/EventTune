@@ -6,7 +6,9 @@ image tokens. Given a tiny labelled support set it:
 
   * discovers the language-decoder ``k_proj``/``v_proj`` outputs;
   * isolates the *post-event* image token positions;
-  * extracts a correctness-gradient KV subspace ``B`` (SVD of ``G.G^T``);
+  * extracts a correctness-gradient KV subspace ``B`` (top eigenvectors of the
+    per-kind covariance ``C = sum_i G_i^T G_i``, equivalent to the SVD right
+    singular directions of the stacked ``G``);
   * learns a tiny raw coefficient vector ``a`` (2 layers x K/V x rank = 32);
   * applies the residual ``Z' = Z + M ⊙ (Z B) diag(alpha·tanh(a)) B^T``.
 
@@ -194,6 +196,23 @@ class KVGradientCollector:
     def clear(self) -> None:
         self.outputs.clear()
 
+    def close(self) -> None:
+        """Unregister the forward hooks and drop cached activations."""
+        self.clear()
+        for handle in self.handles:
+            handle.remove()
+        self.handles.clear()
+
+
+def _disable_input_require_grads(model: nn.Module) -> None:
+    """Best-effort removal of the ``enable_input_require_grads`` hook."""
+    disable = getattr(model, "disable_input_require_grads", None)
+    if callable(disable):
+        try:
+            disable()
+        except (AttributeError, TypeError):
+            pass
+
 
 def extract_kv_subspace(
     model,
@@ -226,20 +245,24 @@ def extract_kv_subspace(
     }
     collector = KVGradientCollector(modules)
     samples = list(support)
-    for sample in tqdm(samples, desc="KV gradients", dynamic_ncols=True, disable=not progress):
-        batch, span = build_labeled_batch(processor, sample, crop_size)
-        loss = strict_generation_loss(model, batch, span, device)
-        loss.backward()
-        post_mask = build_post_mask(batch["input_ids"])
-        gradients = collector.gradients(post_mask)
-        for key, gradient in gradients.items():
-            gradient = gradient.float()
-            covariance[key].add_(gradient.t() @ gradient)
-        collector.clear()
-        model.zero_grad(set_to_none=True)
-        del loss, batch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+    try:
+        for sample in tqdm(samples, desc="KV gradients", dynamic_ncols=True, disable=not progress):
+            batch, span = build_labeled_batch(processor, sample, crop_size)
+            loss = strict_generation_loss(model, batch, span, device)
+            loss.backward()
+            post_mask = build_post_mask(batch["input_ids"])
+            gradients = collector.gradients(post_mask)
+            for key, gradient in gradients.items():
+                gradient = gradient.float()
+                covariance[key].add_(gradient.t() @ gradient)
+            collector.clear()
+            model.zero_grad(set_to_none=True)
+            del loss, batch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+    finally:
+        collector.close()
+        _disable_input_require_grads(model)
 
     bases: dict[tuple[int, str], torch.Tensor] = {}
     spectra: dict[str, list[float]] = {}
@@ -307,6 +330,13 @@ class ResidualKVController(nn.Module):
 
     def clear_mask(self) -> None:
         self._active_mask = None
+
+    def close(self) -> None:
+        """Unregister the forward hooks and drop the active mask."""
+        self.clear_mask()
+        for handle in self._hooks:
+            handle.remove()
+        self._hooks.clear()
 
     def reset_coefficients(self) -> None:
         with torch.no_grad():

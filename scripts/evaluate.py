@@ -7,7 +7,12 @@ from pathlib import Path
 
 from tqdm.auto import tqdm
 
-from eventttt.io import iter_jsonl, read_samples, write_json
+from eventttt.io import (
+    build_eval_config,
+    iter_jsonl,
+    read_samples,
+    write_json,
+)
 from eventttt.kv_ttt import (
     build_controller_from_state,
     build_post_image_mask_fn,
@@ -40,8 +45,36 @@ def main() -> None:
     samples = read_samples(args.manifest)
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
+
+    config = build_eval_config(
+        model_id=args.model_id,
+        adapter=args.adapter or None,
+        kv_state=args.kv_state or None,
+        manifest=args.manifest,
+        d4_views=args.d4_views,
+        crop_size=args.crop_size,
+        no_lora=args.no_lora,
+    )
+
     predictions = output / "predictions.jsonl"
     completed_rows = list(iter_jsonl(predictions)) if predictions.exists() else []
+    if completed_rows:
+        config_path = output / "eval_config.json"
+        if not config_path.exists():
+            raise RuntimeError(
+                f"{config_path} is missing but {predictions} exists; refusing to resume "
+                "predictions with unknown provenance"
+            )
+        previous = json.loads(config_path.read_text(encoding="utf-8"))
+        if previous != config:
+            raise ValueError(
+                "Refusing to resume: evaluation configuration changed. "
+                "Previous eval_config.json does not match this invocation.\n"
+                f"previous: {json.dumps(previous, indent=2, sort_keys=True)}\n"
+                f"current:  {json.dumps(config, indent=2, sort_keys=True)}"
+            )
+        print(f"resume: evaluation config matches {config_path}")
+    write_json(output / "eval_config.json", config)
     completed_ids = {row["sample_id"] for row in completed_rows}
     if len(completed_ids) != len(completed_rows):
         raise ValueError(f"Duplicate sample IDs in partial predictions: {predictions}")
@@ -62,6 +95,23 @@ def main() -> None:
         if payload["model_id"] != args.model_id:
             raise ValueError(
                 f"kv-state model_id {payload['model_id']} does not match --model-id {args.model_id}"
+            )
+        metadata = payload.get("metadata") or {}
+        bound_adapter = metadata.get("adapter_sha256")
+        if not bound_adapter:
+            raise ValueError(
+                f"kv-state {args.kv_state} carries no adapter_sha256 binding; "
+                "refuse to apply it to an unchecked adapter"
+            )
+        if not args.adapter:
+            raise ValueError(
+                "kv-state requires --adapter: the KV subspace is source-adapter "
+                "specific and cannot be evaluated on the unadapted model"
+            )
+        if bound_adapter != config["adapter_sha256"]:
+            raise ValueError(
+                "Refusing to apply kv-state: its source adapter fingerprint "
+                f"{bound_adapter} does not match --adapter {config['adapter_sha256']}"
             )
         modules, _ = discover_language_decoder_kv(model)
         selected = set(payload["layers"])

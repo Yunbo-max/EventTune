@@ -8,7 +8,7 @@ from pathlib import Path
 
 import torch
 
-from eventttt.io import read_samples, write_json
+from eventttt.io import adapter_fingerprint, model_fingerprint, read_samples, write_json
 from eventttt.kv_ttt import (
     build_controller_from_state,
     build_post_image_mask_fn,
@@ -30,6 +30,14 @@ def main() -> None:
         "subspace from target support and learn 32 event coefficients"
     )
     parser.add_argument("--support-manifest", required=True)
+    parser.add_argument(
+        "--subspace-manifest",
+        default=None,
+        help="manifest used to learn the shared KV subspace B; defaults to "
+        "the target support manifest. For the offline cross-event variant, point "
+        "this at frozen source samples and keep --support-manifest as the target "
+        "support used only for fitting the coefficient vector a.",
+    )
     parser.add_argument("--source-adapter", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-id", default=DEFAULT_MODEL)
@@ -49,6 +57,9 @@ def main() -> None:
     support = read_samples(args.support_manifest)
     if len(support) != 12:
         print(f"warning: standard Hawaii support is 12 examples, found {len(support)}")
+    subspace = read_samples(args.subspace_manifest) if args.subspace_manifest else support
+    if subspace is not support and args.subspace_manifest:
+        print(f"offline subspace: {len(subspace)} samples from {args.subspace_manifest}")
 
     model, processor = load_model(
         args.model_id, source_adapter=args.source_adapter, gradient_checkpointing=False
@@ -87,7 +98,7 @@ def main() -> None:
     bases, spectra = extract_kv_subspace(
         model,
         processor,
-        support,
+        subspace,
         module_slice,
         build_post_mask,
         rank=args.rank,
@@ -119,12 +130,22 @@ def main() -> None:
 
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
+    adapter_hash = adapter_fingerprint(args.source_adapter)
+    model_hash = model_fingerprint(args.model_id)
     save_kv_state(
         output / "kv_state.pt",
         controller,
         args.model_id,
         metadata={
-            "source_adapter": args.source_adapter,
+            "source_adapter": str(Path(args.source_adapter).resolve()),
+            "adapter_sha256": adapter_hash,
+            "model_sha256": model_hash,
+            "subspace_manifest": (
+                str(Path(args.subspace_manifest).resolve())
+                if args.subspace_manifest
+                else "target_support"
+            ),
+            "subspace_examples": len(subspace),
             "num_layers": num_layers,
             "crop_size": args.crop_size,
             "seed": args.seed,
@@ -139,11 +160,19 @@ def main() -> None:
             "selected_layers": selected_layers,
             "rank": args.rank,
             "support_examples": len(support),
-            "gradient_passes": len(support),
+            "subspace_examples": len(subspace),
+            "subspace_manifest": (
+                str(Path(args.subspace_manifest).resolve())
+                if args.subspace_manifest
+                else "target_support"
+            ),
+            "gradient_passes": len(subspace),
             "crop_size": args.crop_size,
             "trainable_before_extraction": report,
             "kv_ttt_scalars": num_scalars,
             "spectra": spectra,
+            "adapter_sha256": adapter_hash,
+            "model_sha256": model_hash,
             "extraction_seconds": round(extraction_seconds, 2),
             "arguments": vars(args),
         },
