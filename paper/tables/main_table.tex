@@ -1,0 +1,22 @@
+\begin{table*}[t]
+\centering
+\footnotesize
+\begin{tabular}{l lllllll}
+\toprule
+Event & \multicolumn{3}{c}{$r{=}16$, $T{=}4$, $\alpha{=}0.5$} & \multicolumn{4}{c}{gain over source} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-8}
+ & Source-F1 & KV-F1 & $\Delta$F1 & Src-NLL & KV-NLL & $\Delta$NLL & $\Delta$bAcc \\
+hawaii & 0.387 & 0.424 & +0.037 & 3.37 & 2.94 & -0.430 & +0.027 \\
+turkey & 0.357 & 0.390 & +0.033 & 1.46 & 1.35 & -0.107 & +0.020 \\
+la-palma & 0.407 & 0.425 & +0.018 & 1.06 & 0.99 & -0.071 & +0.013 \\
+beirut & 0.231 & 0.250 & +0.019 & 1.65 & 1.44 & -0.214 & +0.002 \\
+congo & 0.383 & 0.395 & +0.012 & 1.12 & 1.11 & -0.008 & +0.015 \\
+\midrule
+\textit{mean (5 folds)} & 0.353 & 0.377 & +0.024 & -- & -- & -0.166 & -- \\
+\textit{wins (KV $>$ S)} & \multicolumn{3}{c}{5/5 (F1)} & \multicolumn{4}{c}{5/5 (NLL)} \\
+\textit{(pending)} & -- & -- & -- & -- & -- & \multicolumn{1}{c}{haiti, libya, marshall, bata, noto, morocco} \\
+\bottomrule
+\end{tabular}
+\caption{Leave-one-event-out on \textsc{BRIGHT}. Rows are emitted from disk metrics by \texttt{paper/make\_figs\_and\_tables.py}; folds still queued print as \emph{pending}.}
+\label{tab:main}
+\end{table*}

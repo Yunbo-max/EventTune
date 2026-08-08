@@ -24,6 +24,16 @@ EVENTS = [
 ]
 EVENTS.insert(0, "hawaii-wildfire")
 
+SHORT = {
+    "hawaii-wildfire": "hawaii",
+    "la_palma-volcano": "la-palma",
+    "marshall-wildfire": "marshall",
+}
+
+
+def short(ev: str) -> str:
+    return SHORT.get(ev, ev.replace("_", "-").split("-")[0])
+
 # Events whose runs live under a custom directory/naming in the repo.
 OVERRIDES = {
     "hawaii-wildfire": {
@@ -75,9 +85,9 @@ def write_tables(rows):
     OUT.mkdir(exist_ok=True)
     lines = []
     for r in rows:
-        short = r["event"].split("-")[0]
+        ev = short(r["event"])
         lines.append(
-            f"{short} & {r['s_f1']:.3f} & {r['k_f1']:.3f} & {fmt(r['k_f1']-r['s_f1'],True)} "
+            f"{ev} & {r['s_f1']:.3f} & {r['k_f1']:.3f} & {fmt(r['k_f1']-r['s_f1'],True)} "
             f"& {r['s_nll']:.2f} & {r['k_nll']:.2f} & {fmt(r['k_nll']-r['s_nll'],True)} "
             f"& {fmt(r['k_bac']-r['s_bac'],True)} \\\\"
         )
@@ -106,7 +116,7 @@ def write_tables(rows):
         if missing:
             body += "\n" + (
                 "\\textit{(pending)} & -- & -- & -- & -- & -- & \\multicolumn{1}{c}{"
-                + ", ".join(m.replace("_", "-").split("-")[0] for m in missing)
+                + ", ".join(short(m) for m in missing)
                 + "} \\\\"
             )
     # Complete document-level table environment (no \input inside tabular).
@@ -142,9 +152,9 @@ def plot(rows):
         import matplotlib.pyplot as plt
     except Exception:
         return
-    short = [r["event"].split("-")[0] for r in rows] or ["pending"] * len(rows)
+    labels = [short(r["event"]) for r in rows] if rows else ["pending"]
     if not rows:
-        short = ["waiting"]
+        labels = ["waiting"]
     x = np.arange(len(rows)) if rows else np.arange(1)
     w = 0.38
     fig, ax = plt.subplots(figsize=(7.2, 2.6))
@@ -156,7 +166,7 @@ def plot(rows):
     ax.set_ylabel("macro-F1")
     ax.set_ylim(0, 0.8)
     ax.set_xticks(x)
-    ax.set_xticklabels(short, rotation=45, ha="right", fontsize=7)
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=7)
     ax.legend(fontsize=8, frameon=False)
     for s in ["top", "right"]:
         ax.spines[s].set_visible(False)
@@ -168,7 +178,7 @@ def plot(rows):
 if __name__ == "__main__":
     rows = collect()
     for r in rows:
-        r["short"] = r["event"].split("-")[0]
+        r["short"] = short(r["event"])
     write_tables(rows)
     plot(rows)
     print(f"wrote tables for {len(rows)} events")
