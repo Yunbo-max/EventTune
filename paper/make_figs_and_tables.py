@@ -22,6 +22,15 @@ EVENTS = [
     "noto-earthquake",
     "morocco-earthquake",
 ]
+EVENTS.insert(0, "hawaii-wildfire")
+
+# Events whose runs live under a custom directory/naming in the repo.
+OVERRIDES = {
+    "hawaii-wildfire": {
+        "source": "runs/hawaii_min/source_eval_300/metrics.json",
+        "kv": "runs/hawaii_min/kv_eval_300_r16/metrics.json",
+    },
+}
 
 
 def agg(d):
@@ -32,8 +41,11 @@ def agg(d):
 def collect():
     rows = []
     for ev in EVENTS:
-        se = BASE / ev / "source_eval" / "metrics.json"
-        ke = BASE / ev / "kv_eval" / "metrics.json"
+        if ev in OVERRIDES:
+            se, ke = Path(OVERRIDES[ev]["source"]), Path(OVERRIDES[ev]["kv"])
+        else:
+            se = BASE / ev / "source_eval" / "metrics.json"
+            ke = BASE / ev / "kv_eval" / "metrics.json"
         if not (se.exists() and ke.exists()):
             continue
         s, k = agg(se), agg(ke)
@@ -66,7 +78,8 @@ def write_tables(rows):
         short = r["event"].split("-")[0]
         lines.append(
             f"{short} & {r['s_f1']:.3f} & {r['k_f1']:.3f} & {fmt(r['k_f1']-r['s_f1'],True)} "
-            f"& {r['s_nll']:.2f} & {r['k_nll']:.2f} & {fmt(r['k_nll']-r['s_nll'],True)} \\\\"
+            f"& {r['s_nll']:.2f} & {r['k_nll']:.2f} & {fmt(r['k_nll']-r['s_nll'],True)} "
+            f"& {fmt(r['k_bac']-r['s_bac'],True)} \\\\"
         )
     if rows:
         df1 = np.mean([r["k_f1"] - r["s_f1"] for r in rows])
@@ -76,17 +89,52 @@ def write_tables(rows):
         n = len(rows)
         lines.append("\\midrule")
         lines.append(
-            f"\\textit{{mean ({n} events)}} & {s_f1:.3f} & {k_f1:.3f} & {fmt(df1,True)} "
-            f"& -- & -- & {fmt(dnll,True)} \\\\"
+            f"\\textit{{mean ({n} folds)}} & {s_f1:.3f} & {k_f1:.3f} & {fmt(df1,True)} "
+            f"& -- & -- & {fmt(dnll,True)} & -- \\\\"
         )
         lines.append(
             f"\\textit{{wins (KV $>$ S)}} & \\multicolumn{{3}}{{c}}{{{sum(1 for r in rows if r['k_f1']>r['s_f1'])}/{n} (F1)}} "
-            f"& \\multicolumn{{3}}{{c}}{{{sum(1 for r in rows if r['k_nll']<r['s_nll'])}/{n} (NLL)}} \\\\"
+            f"& \\multicolumn{{4}}{{c}}{{{sum(1 for r in rows if r['k_nll']<r['s_nll'])}/{n} (NLL)}} \\\\"
         )
-    (OUT / "tables" / "main_body.tex").write_text("\n".join(lines) + "\n")
+    body = "\n".join(lines).strip()
+    if not rows:
+        body = "\\textit{(no completed folds on disk yet)} & -- & -- & -- & -- & -- & -- \\\\"
+    else:
+        # Reminder row for the folds whose runs have not completed.
+        done = {r["event"] for r in rows}
+        missing = [ev for ev in EVENTS if ev not in done]
+        if missing:
+            body += "\n" + (
+                "\\textit{(pending)} & -- & -- & -- & -- & -- & \\multicolumn{1}{c}{"
+                + ", ".join(m.replace("_", "-").split("-")[0] for m in missing)
+                + "} \\\\"
+            )
+    # Complete document-level table environment (no \input inside tabular).
+    column_spec = "l lllllll"
+    content = (
+        "\\begin{table*}[t]\n"
+        "\\centering\n"
+        "\\footnotesize\n"
+        "\\begin{tabular}{" + column_spec + "}\n"
+        "\\toprule\n"
+        "Event & \\multicolumn{3}{c}{$r{=}16$, $T{=}4$, $\\alpha{=}0.5$} & \\multicolumn{4}{c}{gain over source} \\\\\n"
+        "\\cmidrule(lr){2-4}\\cmidrule(lr){5-8}\n"
+        " & Source-F1 & KV-F1 & $\\Delta$F1 & Src-NLL & KV-NLL & $\\Delta$NLL & $\\Delta$bAcc \\\\\n"
+        + body
+        + "\n\\bottomrule\n"
+        "\\end{tabular}\n"
+        "\\caption{Leave-one-event-out on \\textsc{BRIGHT}. "
+        "Rows are emitted from disk metrics by \\texttt{paper/make\\_figs\\_and\\_tables.py}; "
+        "folds still queued print as \\emph{pending}.}\n"
+        "\\label{tab:main}\n"
+        "\\end{table*}\n"
+    )
+    (OUT / "tables" / "main_table.tex").write_text(content)
+    (OUT / "tables" / "main_body.tex").write_text(body + "\n")
 
 
 def plot(rows):
+    OUT.mkdir(exist_ok=True)
     try:
         import matplotlib
 
@@ -94,14 +142,17 @@ def plot(rows):
         import matplotlib.pyplot as plt
     except Exception:
         return
+    short = [r["event"].split("-")[0] for r in rows] or ["pending"] * len(rows)
     if not rows:
-        return
-    short = [r["event"].split("-")[0] for r in rows]
-    x = np.arange(len(rows))
+        short = ["waiting"]
+    x = np.arange(len(rows)) if rows else np.arange(1)
     w = 0.38
     fig, ax = plt.subplots(figsize=(7.2, 2.6))
-    ax.bar(x - w / 2, [r["s_f1"] for r in rows], w, label="Source (LoRA)")
-    ax.bar(x + w / 2, [r["k_f1"] for r in rows], w, label="KV-TTT (proposed)")
+    for xi, vals, lab in (
+        (x - w / 2, [r["s_f1"] for r in rows] if rows else [0.4], "Source (LoRA)"),
+        (x + w / 2, [r["k_f1"] for r in rows] if rows else [0.4], "KV-TTT (proposed)"),
+    ):
+        ax.bar(xi, vals, w, label=lab)
     ax.set_ylabel("macro-F1")
     ax.set_ylim(0, 0.8)
     ax.set_xticks(x)
