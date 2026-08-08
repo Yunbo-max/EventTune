@@ -8,6 +8,14 @@ from pathlib import Path
 from tqdm.auto import tqdm
 
 from eventttt.io import iter_jsonl, read_samples, write_json
+from eventttt.kv_ttt import (
+    build_controller_from_state,
+    build_post_image_mask_fn,
+    discover_language_decoder_kv,
+    image_token_id_of,
+    load_kv_state,
+    score_sample_with_kv,
+)
 from eventttt.metrics import metrics_by_event
 from eventttt.qwen import DEFAULT_MODEL, load_model, preflight, score_sample
 
@@ -21,6 +29,11 @@ def main() -> None:
     parser.add_argument("--no-lora", action="store_true", help="Evaluate raw base model without any LoRA")
     parser.add_argument("--d4-views", type=int, default=8)
     parser.add_argument("--crop-size", type=int, default=448)
+    parser.add_argument(
+        "--kv-state",
+        default="",
+        help="Path to a KV-TTT kv_state.pt; apply the learned post-image residual K/V controller",
+    )
     args = parser.parse_args()
 
     print(json.dumps(preflight(require_gpu=True), indent=2))
@@ -41,9 +54,36 @@ def main() -> None:
         gradient_checkpointing=False,
         use_lora=not args.no_lora,
     )
+
+    controller = None
+    build_post_mask = None
+    if args.kv_state:
+        payload = load_kv_state(args.kv_state, device=next(model.parameters()).device)
+        if payload["model_id"] != args.model_id:
+            raise ValueError(
+                f"kv-state model_id {payload['model_id']} does not match --model-id {args.model_id}"
+            )
+        modules, _ = discover_language_decoder_kv(model)
+        selected = set(payload["layers"])
+        module_slice = [(layer, kind, module) for layer, kind, module in modules if layer in selected]
+        missing = selected - {layer for layer, _, _ in module_slice}
+        if missing:
+            raise ValueError(f"kv-state layers missing from loaded model: {sorted(missing)}")
+        controller = build_controller_from_state(
+            module_slice, payload, device=next(model.parameters()).device
+        )
+        build_post_mask = build_post_image_mask_fn(image_token_id_of(model))
+        print(f"kv-state: rank={payload['rank']} layers={payload['layers']}")
+
+    scorer = (
+        lambda sample: score_sample_with_kv(
+            model, processor, controller, build_post_mask, sample, args.d4_views, args.crop_size
+        )
+    ) if controller else (lambda sample: score_sample(model, processor, sample, args.d4_views, args.crop_size))
+
     with predictions.open("a", encoding="utf-8", buffering=1) as handle:
         for sample in tqdm(pending, desc="Scoring", dynamic_ncols=True):
-            row = score_sample(model, processor, sample, args.d4_views, args.crop_size)
+            row = scorer(sample)
             handle.write(json.dumps(row) + "\n")
     rows = list(iter_jsonl(predictions))
     if len(rows) != len(samples):

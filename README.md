@@ -4,10 +4,12 @@ Few-shot event-time adaptation of a small vision-language model for building-dam
 
 ## Project status and history
 
-**Snapshot: 2026-08-04 UTC.** The end-to-end system is implemented and has
+**Snapshot: 2026-08-08 UTC.** The end-to-end system is implemented and has
 completed one full 7B diagnostic, but the research hypothesis is **not yet
 validated**. The first result was negative and is preserved rather than hidden.
-No GPU training job is currently running.
+The new Post-Visual Residual KV-TTT path is implemented, all eight pre-run
+sanity gates pass, and a smoke GPU run is complete; a Hawaii query run has not
+started. No GPU training job is currently running.
 
 | Area | Current state | Evidence |
 |---|---|---|
@@ -17,7 +19,8 @@ No GPU training job is currently running.
 | Completed run | Hawaii wildfire, seed 0, 100 source updates, 12 support and 3,443 query examples | [diagnostic report](reports/20260804-hawaii-100step-diagnostic.md) |
 | Durable artifacts | Source/event LoRA adapters, complete predictions, metrics, and hashes are stored privately | [EventTune adapters](https://huggingface.co/humanlong/EventTune-Qwen2.5-VL-7B) |
 | Corrective controls | Per-update class cycling and an independent 150-example source gate | [`63a36c5`](https://github.com/Yunbo-max/EventTune/commit/63a36c5), [`2a66683`](https://github.com/Yunbo-max/EventTune/commit/2a66683) |
-| Verification | 23 CPU/unit tests pass; shell and Python syntax checks pass | [`tests/`](tests) |
+| Verification | 32 unit tests pass (incl. 9 KV-TTT); shell and Python syntax checks pass | [`tests/`](tests) |
+| KV-TTT path | Post-Visual Residual KV-TTT implemented, all sanity gates pass, smoke GPU run complete | [`src/eventttt/kv_ttt.py`](src/eventttt/kv_ttt.py) |
 | Next experiment | A fresh 1,000-update Hawaii 7B run with the gate enabled | Prepared, not started |
 
 ### Result so far
@@ -37,6 +40,90 @@ only 200 examples were sampled from a 241,442-example source manifest. The
 adapted result is worse, so it is recorded as a negative diagnostic and not as
 evidence for EventTune. The exact weights and results remain available for
 reproduction, with the model card explicitly warning against production use.
+
+### Post-Visual Residual KV-TTT (experimental path)
+
+An independent, experimental adaptation path implemented alongside the LoRA
+EventTune baseline. The original LoRA pipeline is untouched and remains the
+reference baseline. KV-TTT freezes the entire VLM **and** the source LoRA, and
+learns only a tiny event-specific coefficient vector operating in a
+correctness-gradient-derived K/V subspace:
+
+| Component | Setting |
+|---|---|
+| Intervention site | Qwen2.5-VL language-decoder `k_proj` / `v_proj` outputs (post-image tokens only) |
+| Prompt layout | first image = pre-event optical; second image = post-event optical/SAR; then text; label-only loss on the assistant class-label span |
+| Layers | `num_layers // 2` and `num_layers - 1` (middle + last; 14 and 27 for the 7B) |
+| Subspace | correctness-gradient covariance `C = Σ G^T G` over post-image K/V rows, top-`rank` eigenvectors of `C` (= SVD right singular directions) |
+| Adaptation | residual `Z' = Z + M ⊙ (Z B) diag(α·tanh(a)) B^T`, `α_max = 0.5`, only post-image token rows `M` are touched |
+| Trainable | 2 layers × 2 (K/V) × rank 8 = **32 scalar coefficients**; base VLM = 0, source LoRA = 0 |
+| Coefficient fit | Adam, lr 0.05, 4 full-support updates (no sampler), L2 1e-3, grad clip 1.0 |
+| Saved artifact | `event_kv/kv_state.pt` + `extraction.json` + `adaptation.json` (no new LoRA weights) |
+
+New files:
+
+```text
+src/eventttt/kv_ttt.py        mask builder, K/V discovery, gradient collector,
+                              subspace extraction, ResidualKVController,
+                              coefficient fitting, serialization
+scripts/adapt_event_kv.py     extract subspace + fit coefficients from support
+scripts/sanity_check_kv.py    pre-run gate checks (CPU/GPU)
+scripts/evaluate.py           gained --kv-state PATH, same D4 scorer
+tests/test_kv_ttt.py          9 unit tests (mask grouping, C↔SVD, identity, isolation)
+```
+
+**Sanity gates — all pass (RTX A5000, BF16).** These gate a full Hawaii query run:
+
+| Gate | Result |
+|---|---:|
+| `a = 0` reproduces source logits | max diff = 0.00 |
+| Post-image K/V gradients present | `14:K` 1.7e-2, `14:V` 1.5e-2, `27:K` 1.1e-3, `27:V` 2.3e-4 |
+| Basis orthogonality `B^T B ≈ I` | max dev 8.3e-7 |
+| Parameter isolation | base 0 / LoRA 0 / KV scalars 32 |
+| Mask isolation | pre-image tokens strictly unchanged; post-image tokens changed; write is masked to post rows only |
+| Reset restores source logits | max diff = 0.00 |
+| Save/load round trip | max diff = 0.00 |
+| Support loss after fitting | 0.120 → 0.094 |
+
+Note: text tokens that follow the post-image group legitimately change through
+causal attention (their queries attend to the edited post K/V) — that is the
+adaptation mechanism, not a mask violation.
+
+**Smoke GPU run (12 support / 6 query, synthetic smoke data, seed 0).** The
+pipeline ran end to end: 7B source LoRA → KV subspace extraction (10.2 s) → 32
+coefficient fit (31.2 s) → query evaluation with and without the KV state.
+
+| Query result | Source LoRA | Source + KV-TTT |
+|---|---:|---:|
+| Macro-F1 | 1.000 | 1.000 |
+| Balanced accuracy | 1.000 | 1.000 |
+| NLL | 0.3004 | 0.2737 |
+
+The toy smoke set is saturated (both reach F1 1.0), so the observable signal so
+far is the NLL improvement (0.300 → 0.274) plus the support-loss reduction;
+macro-F1 does not discriminate on this data. Eigenvalue spectra show a clean
+rank-8 drop-off, strongest at layer 14 (K > V). Reproduce with:
+
+```bash
+python scripts/make_smoke_data.py --output-dir data/smoke
+# source LoRA (tiny, 4 updates)
+python scripts/adapt_event.py --support-manifest data/smoke/source.jsonl \
+  --output-dir reports/source_smoke --fixed-steps 4
+# KV-TTT adaptation
+python scripts/adapt_event_kv.py --support-manifest data/smoke/support.jsonl \
+  --source-adapter reports/source_smoke --output-dir reports/kv_tune_smoke
+# evaluation with / without the KV state
+python scripts/evaluate.py --manifest data/smoke/query.jsonl \
+  --adapter reports/source_smoke --output-dir reports/eval_source
+python scripts/evaluate.py --manifest data/smoke/query.jsonl \
+  --adapter reports/source_smoke --kv-state reports/kv_tune_smoke/kv_state.pt \
+  --output-dir reports/eval_kv
+```
+
+Support-CV rule: the KV basis itself uses support labels, so a naive
+"full-support basis → support CV" selection is invalid. Hyperparameters
+(rank/layers/lr/steps/α_max) are pre-registered; any future CV must re-extract
+the basis per fold from that fold's training subset only.
 
 ### Development timeline
 
