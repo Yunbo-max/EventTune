@@ -21,7 +21,7 @@ started. No GPU training job is currently running.
 | Corrective controls | Per-update class cycling and an independent 150-example source gate | [`63a36c5`](https://github.com/Yunbo-max/EventTune/commit/63a36c5), [`2a66683`](https://github.com/Yunbo-max/EventTune/commit/2a66683) |
 | Verification | 32 unit tests pass (incl. 9 KV-TTT); shell and Python syntax checks pass | [`tests/`](tests) |
 | KV-TTT path | Post-Visual Residual KV-TTT implemented, all sanity gates pass, smoke GPU run complete | [`src/eventttt/kv_ttt.py`](src/eventttt/kv_ttt.py) |
-| Next experiment | A fresh 1,000-update Hawaii 7B run with the gate enabled | Prepared, not started |
+| Next experiment | 11-fold NeurIPS main + baselines + ablations (EVAL_D4_VIEWS=1, KV rank 5, support 24/12/48) | [docs/neurips-protocol.md](docs/neurips-protocol.md) + `scripts/run_neurips_batch.sh` |
 
 ### Result so far
 
@@ -475,6 +475,22 @@ For one-shot-per-class support, cross-validation is not identifiable. Use a step
 ```bash
 bash scripts/run_event.sh SPLIT_DIR RUN_DIR 1000 8
 ```
+
+### NeurIPS protocol (main + baselines + ablations)
+
+The complete experiment set -- data cuts, baselines, the main
+EventTune/KV-TTT run, and all ablations -- is specified in
+[docs/neurips-protocol.md](docs/neurips-protocol.md) and launched by:
+
+```bash
+PYTHON_BIN=python3 \
+SOURCE_STEPS=1000 EVAL_D4_VIEWS=1 KV_RANK=5 KV_STEPS=4 KV_ALPHA_MAX=0.5 \
+KV_LAYERS="14 27" RUN_ORIGINAL_EVAL=1 \
+bash scripts/run_neurips_batch.sh
+```
+
+The batch is resumable per fold and per stage, and writes per-fold progress to
+`runs/neurips/<event>/pipeline.log`.
 
 ## Run two events on two GPUs
 
