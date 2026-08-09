@@ -44,6 +44,10 @@ def main() -> None:
     parser.add_argument("--rank", type=int, default=8)
     parser.add_argument("--layers", nargs="+", type=int, default=None)
     parser.add_argument("--alpha-max", type=float, default=0.5)
+    parser.add_argument(
+        "--coefficient-mode", choices=("diagonal", "full"), default="diagonal",
+        help="diagonal gain (original method) or bounded dense subspace mixing",
+    )
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--steps", type=int, default=4)
     parser.add_argument("--l2", type=float, default=1e-3)
@@ -55,8 +59,8 @@ def main() -> None:
     torch.manual_seed(args.seed)
 
     support = read_samples(args.support_manifest)
-    if len(support) != 12:
-        print(f"warning: standard Hawaii support is 12 examples, found {len(support)}")
+    if len(support) != 24:
+        print(f"warning: standard NeurIPS support is 24 examples, found {len(support)}")
     subspace = read_samples(args.subspace_manifest) if args.subspace_manifest else support
     if subspace is not support and args.subspace_manifest:
         print(f"offline subspace: {len(subspace)} samples from {args.subspace_manifest}")
@@ -107,11 +111,19 @@ def main() -> None:
     extraction_seconds = time.time() - t0
 
     controller = build_controller_from_state(
-        module_slice, {"bases": bases, "rank": args.rank, "alpha_max": args.alpha_max}, device=device
+        module_slice,
+        {
+            "bases": bases,
+            "rank": args.rank,
+            "alpha_max": args.alpha_max,
+            "coefficient_mode": args.coefficient_mode,
+        },
+        device=device,
     )
     num_scalars = controller.num_scalars()
     print(f"KV-TTT trainable scalars: {num_scalars}")
-    if num_scalars != len(module_slice) * args.rank:
+    scalars_per_module = args.rank if args.coefficient_mode == "diagonal" else args.rank ** 2
+    if num_scalars != len(module_slice) * scalars_per_module:
         raise RuntimeError("Unexpected number of KV-TTT scalars")
 
     t0 = time.time()
@@ -159,6 +171,7 @@ def main() -> None:
             "num_decoder_layers": num_layers,
             "selected_layers": selected_layers,
             "rank": args.rank,
+            "coefficient_mode": args.coefficient_mode,
             "support_examples": len(support),
             "subspace_examples": len(subspace),
             "subspace_manifest": (
@@ -185,6 +198,7 @@ def main() -> None:
             "steps": args.steps,
             "coefficient_l2": args.l2,
             "alpha_max": args.alpha_max,
+            "coefficient_mode": args.coefficient_mode,
             "gradient_clip": 1.0,
             "losses": losses,
             "final_loss": losses[-1] if losses else None,

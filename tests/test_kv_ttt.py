@@ -6,9 +6,24 @@ from eventttt.kv_ttt import (
     ResidualKVController,
     _disable_input_require_grads,
     build_post_image_mask_fn,
+    consistency_js_loss,
     default_layers,
     discover_language_decoder_kv,
 )
+
+
+def test_consistency_js_loss_zero_for_identical_views_and_positive_otherwise():
+    identical = torch.tensor([[2.0, 0.0, -1.0], [2.0, 0.0, -1.0]])
+    disagree = torch.tensor([[5.0, 0.0, -1.0], [-1.0, 0.0, 5.0]])
+    assert torch.allclose(consistency_js_loss(identical), torch.tensor(0.0), atol=1e-7)
+    assert float(consistency_js_loss(disagree)) > 0.5
+
+
+def test_consistency_js_loss_is_differentiable_and_label_free():
+    scores = torch.tensor([[2.0, 0.0, -1.0], [0.0, 2.0, -1.0]], requires_grad=True)
+    consistency_js_loss(scores).backward()
+    assert scores.grad is not None
+    assert torch.any(scores.grad != 0)
 
 
 def test_post_image_mask_groups_second_image_batch():
@@ -116,6 +131,49 @@ def test_controller_gradients_flow_to_coefficients():
     assert any(torch.any(g != 0) for g in grads)
 
 
+def test_full_controller_mixes_subspace_directions_and_is_bounded():
+    torch.manual_seed(3)
+    dim, rank, alpha = 12, 3, 0.4
+    proj = nn.Linear(dim, dim, bias=False)
+    basis = torch.linalg.qr(torch.randn(dim, dim))[0][:, :rank]
+    controller = ResidualKVController(
+        [(0, "K", proj)], {(0, "K"): basis}, rank=rank,
+        alpha_max=alpha, coefficient_mode="full",
+    )
+    assert controller.num_scalars() == rank * rank
+    raw = controller.coefficients["0:K"]
+    with torch.no_grad():
+        raw[0, 1] = 2.0
+    mixing = alpha * raw / (1.0 + torch.linalg.vector_norm(raw))
+    assert float(torch.linalg.matrix_norm(mixing.detach(), ord=2)) < alpha
+    x = torch.randn(1, 4, dim)
+    mask = torch.ones(1, 4, dtype=torch.bool)
+    original = proj(x)
+    controller.set_mask(mask)
+    modified = proj(x)
+    controller.clear_mask()
+    expected = original + (original @ basis @ mixing @ basis.t())
+    assert torch.allclose(modified, expected, atol=1e-6)
+
+
+def test_full_controller_zero_is_identity_and_has_gradients():
+    dim, rank = 8, 2
+    proj = nn.Linear(dim, dim, bias=False)
+    basis = torch.linalg.qr(torch.randn(dim, dim))[0][:, :rank]
+    controller = ResidualKVController(
+        [(0, "V", proj)], {(0, "V"): basis}, rank=rank,
+        coefficient_mode="full",
+    )
+    x = torch.randn(1, 3, dim, requires_grad=True)
+    baseline = proj(x)
+    controller.set_mask(torch.ones(1, 3, dtype=torch.bool))
+    identity = proj(x)
+    assert torch.equal(identity, baseline)
+    identity.sum().backward()
+    assert torch.any(controller.coefficients["0:V"].grad != 0)
+    controller.clear_mask()
+
+
 def test_default_layers_middle_and_last():
     assert default_layers(28) == [14, 27]
     assert default_layers(4) == [2, 3]
@@ -163,6 +221,20 @@ def test_kv_collector_close_unregisters_hooks():
     collector.close()
     assert collector.handles == []
     assert all(len(m._forward_hooks) == 0 for _, _, m in modules)
+
+
+def test_kv_collector_keeps_multiple_forward_gradients():
+    projection = nn.Linear(4, 4, bias=False)
+    collector = KVGradientCollector([(0, "K", projection)])
+    first = projection(torch.randn(1, 3, 4, requires_grad=True))
+    second = projection(torch.randn(1, 3, 4, requires_grad=True))
+    (first.sum() + 2 * second.sum()).backward()
+    masks = [torch.tensor([[False, True, True]]), torch.tensor([[True, False, True]])]
+    gradients = collector.history_gradients(masks)[(0, "K")]
+    assert gradients.shape == (4, 4)
+    assert torch.all(gradients[:2] == 1)
+    assert torch.all(gradients[2:] == 2)
+    collector.close()
 
 
 def test_controller_close_unregisters_hooks():

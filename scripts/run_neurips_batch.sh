@@ -19,6 +19,7 @@ EVAL_D4_VIEWS="${EVAL_D4_VIEWS:-1}"
 KV_RANK="${KV_RANK:-5}"
 KV_STEPS="${KV_STEPS:-4}"
 KV_ALPHA_MAX="${KV_ALPHA_MAX:-0.5}"
+KV_COEFFICIENT_MODE="${KV_COEFFICIENT_MODE:-diagonal}"
 KV_LAYERS="${KV_LAYERS:-14 27}"
 PIVOT_EVENTS="${PIVOT_EVENTS:-hawaii-wildfire la_palma-volcano}"
 
@@ -81,6 +82,7 @@ for SPLIT_DIR in "${PREP_DIR}"/*/; do
       KV_RANK="${KV_RANK}" \
       KV_STEPS="${KV_STEPS}" \
       KV_ALPHA_MAX="${KV_ALPHA_MAX}" \
+      KV_COEFFICIENT_MODE="${KV_COEFFICIENT_MODE}" \
       RUN_ORIGINAL_EVAL="${RUN_ORIGINAL_EVAL:-1}" \
       KV_LAYERS="${KV_LAYERS}" \
       bash scripts/run_event_kv.sh "${SPLIT_DIR}" "${RUN_DIR}" "${SOURCE_STEPS}"
@@ -91,20 +93,23 @@ for SPLIT_DIR in "${PREP_DIR}"/*/; do
   [[ -f "${RUN_DIR}/source_adapter/train_summary.json" ]] || { echo "FAIL ${event} source" >>"${BATCH_LOG}"; continue; }
 
   # ---- 2. natural (unbalanced) evaluation, source vs source+KV -------------
-  if [[ ! -f "${RUN_DIR}/source_natural/metrics.json" ]]; then
-    "${PYTHON_BIN}" scripts/evaluate.py \
-      --manifest "${SPLIT_DIR}/target_natural.jsonl" \
-      --adapter "${RUN_DIR}/source_adapter" \
-      --d4-views "${EVAL_D4_VIEWS}" \
-      --output-dir "${RUN_DIR}/source_natural" >>"${RUN_DIR}/pipeline.log" 2>&1
-  fi
-  if [[ ! -f "${RUN_DIR}/kv_natural/metrics.json" ]]; then
-    "${PYTHON_BIN}" scripts/evaluate.py \
-      --manifest "${SPLIT_DIR}/target_natural.jsonl" \
-      --adapter "${RUN_DIR}/source_adapter" \
-      --kv-state "${RUN_DIR}/event_kv/kv_state.pt" \
-      --d4-views "${EVAL_D4_VIEWS}" \
-      --output-dir "${RUN_DIR}/kv_natural" >>"${RUN_DIR}/pipeline.log" 2>&1
+  # Skipped by default (~137h across all folds). Enable with RUN_NATURAL=1.
+  if [[ "${RUN_NATURAL:-0}" == "1" ]]; then
+    if [[ ! -f "${RUN_DIR}/source_natural/metrics.json" ]]; then
+      "${PYTHON_BIN}" scripts/evaluate.py \
+        --manifest "${SPLIT_DIR}/target_natural.jsonl" \
+        --adapter "${RUN_DIR}/source_adapter" \
+        --d4-views "${EVAL_D4_VIEWS}" \
+        --output-dir "${RUN_DIR}/source_natural" >>"${RUN_DIR}/pipeline.log" 2>&1
+    fi
+    if [[ ! -f "${RUN_DIR}/kv_natural/metrics.json" ]]; then
+      "${PYTHON_BIN}" scripts/evaluate.py \
+        --manifest "${SPLIT_DIR}/target_natural.jsonl" \
+        --adapter "${RUN_DIR}/source_adapter" \
+        --kv-state "${RUN_DIR}/event_kv/kv_state.pt" \
+        --d4-views "${EVAL_D4_VIEWS}" \
+        --output-dir "${RUN_DIR}/kv_natural" >>"${RUN_DIR}/pipeline.log" 2>&1
+    fi
   fi
 
   # ---- 3. support-budget ablation on pivot events ---------------------------
@@ -118,6 +123,7 @@ for SPLIT_DIR in "${PREP_DIR}"/*/; do
           --source-adapter "${RUN_DIR}/source_adapter" \
           --output-dir "${RUN_DIR}/${AD}" \
           --rank "${KV_RANK}" --alpha-max "${KV_ALPHA_MAX}" --steps "${KV_STEPS}" \
+          --coefficient-mode "${KV_COEFFICIENT_MODE}" \
           --layers ${KV_LAYERS} >>"${RUN_DIR}/pipeline.log" 2>&1
       fi
       if [[ ! -f "${RUN_DIR}/${EV}/metrics.json" ]]; then

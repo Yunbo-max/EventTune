@@ -106,6 +106,7 @@ KV_ADAPT_ARGUMENTS=(
   --crop-size "${CROP_SIZE}"
   --rank "${KV_RANK}"
   --alpha-max "${KV_ALPHA_MAX}"
+  --coefficient-mode "${KV_COEFFICIENT_MODE:-diagonal}"
   --steps "${KV_STEPS}"
   --learning-rate "${KV_LR}"
   --l2 "${KV_L2}"

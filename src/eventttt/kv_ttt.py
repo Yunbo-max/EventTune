@@ -165,12 +165,97 @@ def strict_generation_loss(
     return model(**inputs).loss
 
 
+def consistency_js_loss(log_scores: torch.Tensor) -> torch.Tensor:
+    """Jensen-Shannon disagreement between categorical view predictions.
+
+    ``log_scores`` has shape ``[views, classes]`` and may contain unnormalised
+    sequence log-likelihoods. The result is zero exactly when all view
+    distributions agree. No target label or class-prior assumption is used.
+    """
+    if log_scores.ndim != 2 or log_scores.shape[0] < 2:
+        raise ValueError("log_scores must have shape [at least 2 views, classes]")
+    log_probabilities = torch.log_softmax(log_scores.float(), dim=-1)
+    probabilities = log_probabilities.exp()
+    mean_probability = probabilities.mean(dim=0)
+    return (
+        probabilities
+        * (log_probabilities - mean_probability.clamp_min(1e-8).log())
+    ).sum(dim=-1).mean()
+
+
+def _candidate_log_scores_with_grad(
+    model,
+    processor,
+    sample: Sample,
+    pre,
+    post,
+    device,
+    build_post_mask: Callable,
+    controller=None,
+) -> tuple[torch.Tensor, list[torch.Tensor]]:
+    """Differentiably score all class strings for one image view."""
+    from .qwen import _candidate_batch
+
+    scores = []
+    masks = []
+    for label in DAMAGE_LABELS:
+        batch, spans = _candidate_batch(
+            processor, sample, pre, post, candidate_labels=(label,)
+        )
+        batch = {key: value.to(device) for key, value in batch.items()}
+        mask = build_post_mask(batch["input_ids"])
+        masks.append(mask)
+        if controller is not None:
+            controller.set_mask(mask)
+        logits = model(**batch).logits.float()
+        if controller is not None:
+            controller.clear_mask()
+        start, end = spans[0]
+        targets = batch["input_ids"][0, start:end]
+        token_log_probabilities = torch.log_softmax(
+            logits[0, start - 1 : end - 1], dim=-1
+        )
+        scores.append(
+            token_log_probabilities.gather(-1, targets.unsqueeze(-1)).sum()
+        )
+    return torch.stack(scores), masks
+
+
+def sample_consistency_loss(
+    model,
+    processor,
+    sample: Sample,
+    build_post_mask: Callable,
+    d4_views: int = 2,
+    crop_size: int = 448,
+    controller=None,
+) -> tuple[torch.Tensor, list[torch.Tensor]]:
+    """Return label-free D4 consistency loss and forward-aligned masks."""
+    if d4_views < 2:
+        raise ValueError("Unsupervised consistency adaptation requires at least 2 views")
+    device = next(model.parameters()).device
+    pre, post = load_sample_pair(sample, crop_size)
+    view_scores = []
+    masks = []
+    for pre_view, post_view, _ in d4_pair(pre, post, d4_views):
+        scores, view_masks = _candidate_log_scores_with_grad(
+            model, processor, sample, pre_view, post_view, device, build_post_mask,
+            controller=controller,
+        )
+        view_scores.append(scores)
+        masks.extend(view_masks)
+    return consistency_js_loss(torch.stack(view_scores)), masks
+
+
 class KVGradientCollector:
     """Registers forward hooks that retain the gradient of hooked projections."""
 
     def __init__(self, modules: Sequence[tuple[int, str, nn.Module]]):
         self.modules = list(modules)
         self.outputs: dict[tuple[int, str], torch.Tensor] = {}
+        self.history: dict[tuple[int, str], list[torch.Tensor]] = {
+            (layer_id, kind): [] for layer_id, kind, _ in self.modules
+        }
         self.handles = [
             module.register_forward_hook(self._hook(layer_id, kind))
             for layer_id, kind, module in self.modules
@@ -181,6 +266,7 @@ class KVGradientCollector:
             if out.requires_grad:
                 out.retain_grad()
             self.outputs[(layer_id, kind)] = out
+            self.history[(layer_id, kind)].append(out)
 
         return forward_hook
 
@@ -195,6 +281,32 @@ class KVGradientCollector:
 
     def clear(self) -> None:
         self.outputs.clear()
+        for values in self.history.values():
+            values.clear()
+
+    def history_gradients(
+        self, post_masks: Sequence[torch.Tensor]
+    ) -> dict[tuple[int, str], torch.Tensor]:
+        """Return post-image gradients from a sequence of forward passes.
+
+        ``post_masks`` must be in the same order as the forwards. This is used
+        by consistency TTT, where one loss spans several D4 views and candidate
+        label scoring passes.
+        """
+        result = {}
+        for key, outputs in self.history.items():
+            if len(outputs) != len(post_masks):
+                raise RuntimeError(
+                    f"Forward/mask count mismatch for {key}: "
+                    f"{len(outputs)} outputs vs {len(post_masks)} masks"
+                )
+            rows = []
+            for output, mask in zip(outputs, post_masks):
+                if output.grad is None:
+                    raise RuntimeError(f"No gradient stored for {key}")
+                rows.append(output.grad[mask.to(output.grad.device)])
+            result[key] = torch.cat(rows, dim=0)
+        return result
 
     def close(self) -> None:
         """Unregister the forward hooks and drop cached activations."""
@@ -274,9 +386,98 @@ def extract_kv_subspace(
     return bases, spectra
 
 
+def extract_consistency_kv_subspace(
+    model,
+    processor,
+    samples: Sequence[Sample],
+    modules: Sequence[tuple[int, str, nn.Module]],
+    build_post_mask: Callable,
+    rank: int = 8,
+    d4_views: int = 2,
+    crop_size: int = 448,
+    progress: bool = True,
+) -> tuple[dict[tuple[int, str], torch.Tensor], dict[str, list[float]]]:
+    """Extract a label-free KV subspace from D4 pseudo-label consistency.
+
+    The frozen source model predicts an identity-view teacher label. Each
+    non-identity D4 view is then differentiated toward that same label. This
+    keeps only one 7B backward graph alive at a time on a 24 GiB GPU.
+    """
+    if d4_views < 2:
+        raise ValueError("Unsupervised pseudo-label adaptation requires at least 2 views")
+    if not samples:
+        raise ValueError("Cannot extract a subspace from an empty unlabeled set")
+    freeze_model(model)
+    model.eval()
+    if hasattr(model, "gradient_checkpointing_disable"):
+        model.gradient_checkpointing_disable()
+    model.config.use_cache = False
+    model.enable_input_require_grads()
+
+    device = next(model.parameters()).device
+    dims = {(layer_id, kind): module.out_features for layer_id, kind, module in modules}
+    covariance = {
+        key: torch.zeros(dim, dim, dtype=torch.float32, device=device)
+        for key, dim in dims.items()
+    }
+    collector = KVGradientCollector(modules)
+    try:
+        from .qwen import _candidate_batch, score_sample
+
+        for sample in tqdm(
+            list(samples), desc="Consistency KV gradients", dynamic_ncols=True,
+            disable=not progress,
+        ):
+            teacher_label = score_sample(
+                model, processor, sample, d4_views=1, crop_size=crop_size
+            )["prediction"]
+            pre, post = load_sample_pair(sample, crop_size)
+            views = list(d4_pair(pre, post, d4_views))[1:]
+            for pre_view, post_view, _ in views:
+                batch, spans = _candidate_batch(
+                    processor, sample, pre_view, post_view,
+                    candidate_labels=(teacher_label,),
+                )
+                batch = {key: value.to(device) for key, value in batch.items()}
+                mask = build_post_mask(batch["input_ids"])
+                logits = model(**batch).logits.float()
+                start, end = spans[0]
+                targets = batch["input_ids"][0, start:end]
+                loss = -torch.log_softmax(
+                    logits[0, start - 1 : end - 1], dim=-1
+                ).gather(-1, targets.unsqueeze(-1)).mean()
+                loss.backward()
+                gradients = collector.gradients(mask)
+                for key, gradient in gradients.items():
+                    gradient = gradient.float()
+                    covariance[key].add_(gradient.t() @ gradient)
+                collector.clear()
+                model.zero_grad(set_to_none=True)
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+    finally:
+        collector.close()
+        _disable_input_require_grads(model)
+
+    bases = {}
+    spectra = {}
+    for key, covariance_matrix in covariance.items():
+        eigenvalues, eigenvectors = torch.linalg.eigh(covariance_matrix.float())
+        values, order = torch.sort(eigenvalues, descending=True)
+        bases[key] = eigenvectors[:, order[:rank]].contiguous().detach().cpu()
+        spectra[str(key)] = [float(value) for value in values[: rank * 3]]
+    return bases, spectra
+
+
 class ResidualKVController(nn.Module):
-    """Applies ``Z' = Z + M ⊙ ((Z B) diag(gamma)) B^T`` only on post-image
-    token positions, with ``gamma = alpha_max * tanh(raw_a)``.
+    """Apply a bounded residual inside the gradient-derived subspace.
+
+    ``diagonal`` preserves the original method,
+    ``Z' = Z + M ⊙ (Z B) diag(gamma) B^T``. ``full`` learns a dense
+    rank-by-rank mixing matrix, ``Z' = Z + M ⊙ (Z B) A B^T``.  In full
+    mode ``A = alpha_max * R / (1 + ||R||_F)`` so its Frobenius (and therefore
+    spectral) norm is strictly below ``alpha_max``.  This permits rotations
+    between discovered directions without giving up a global update bound.
 
     With every raw coefficient at zero the transform is the identity, so the
     controller leaves the source model numerically unchanged by default."""
@@ -287,6 +488,7 @@ class ResidualKVController(nn.Module):
         bases: dict[tuple[int, str], torch.Tensor],
         rank: int = 8,
         alpha_max: float = 0.5,
+        coefficient_mode: str = "diagonal",
         device: torch.device | None = None,
     ):
         super().__init__()
@@ -295,11 +497,15 @@ class ResidualKVController(nn.Module):
         self.layers = layers
         self.rank = int(rank)
         self.alpha_max = float(alpha_max)
+        if coefficient_mode not in {"diagonal", "full"}:
+            raise ValueError(f"Unknown coefficient_mode: {coefficient_mode}")
+        self.coefficient_mode = coefficient_mode
         self._device = device or next(iter(bases.values())).device
         coefficients = nn.ParameterDict()
         for layer_id, kind, _ in self.modules:
+            shape = (rank,) if coefficient_mode == "diagonal" else (rank, rank)
             coefficients[f"{layer_id}:{kind}"] = nn.Parameter(
-                torch.zeros(rank, dtype=torch.float32, device=self._device)
+                torch.zeros(shape, dtype=torch.float32, device=self._device)
             )
         self.coefficients = coefficients
         self.bases = {
@@ -318,9 +524,18 @@ class ResidualKVController(nn.Module):
                 return output
             basis = self.bases[(layer_id, kind)].to(dtype=output.dtype, device=output.device)
             raw = self.coefficients[f"{layer_id}:{kind}"]
-            gamma = (self.alpha_max * torch.tanh(raw)).to(dtype=output.dtype, device=output.device)
             low = output @ basis
-            delta = (low * gamma) @ basis.transpose(-1, -2)
+            if self.coefficient_mode == "diagonal":
+                gamma = (self.alpha_max * torch.tanh(raw)).to(
+                    dtype=output.dtype, device=output.device
+                )
+                mixed = low * gamma
+            else:
+                # ||A||_2 <= ||A||_F < alpha_max, including during training.
+                scale = self.alpha_max / (1.0 + torch.linalg.vector_norm(raw))
+                mixing = (scale * raw).to(dtype=output.dtype, device=output.device)
+                mixed = low @ mixing
+            delta = mixed @ basis.transpose(-1, -2)
             return output + mask.to(dtype=output.dtype, device=output.device).unsqueeze(-1) * delta
 
         return hook
@@ -347,16 +562,20 @@ class ResidualKVController(nn.Module):
         return list(self.coefficients.parameters())
 
     def num_scalars(self) -> int:
-        return len(self.coefficients) * self.rank
+        return sum(parameter.numel() for parameter in self.coefficients.values())
 
     def effective_gamma(self) -> dict[str, float]:
         with torch.no_grad():
-            return {
-                f"{layer_id}:{kind}": float(
-                    (self.alpha_max * torch.tanh(self.coefficients[f"{layer_id}:{kind}"])).max()
-                )
-                for layer_id, kind, _ in self.modules
-            }
+            result = {}
+            for layer_id, kind, _ in self.modules:
+                raw = self.coefficients[f"{layer_id}:{kind}"]
+                if self.coefficient_mode == "diagonal":
+                    value = torch.abs(self.alpha_max * torch.tanh(raw)).max()
+                else:
+                    mixing = self.alpha_max * raw / (1.0 + torch.linalg.vector_norm(raw))
+                    value = torch.linalg.matrix_norm(mixing, ord=2)
+                result[f"{layer_id}:{kind}"] = float(value)
+            return result
 
 
 def build_controller_from_state(
@@ -374,7 +593,12 @@ def build_controller_from_state(
     for key, tensor in payload["bases"].items():
         bases[normalize(key)] = tensor
     controller = ResidualKVController(
-        modules, bases, rank=payload["rank"], alpha_max=payload.get("alpha_max", 0.5), device=device
+        modules,
+        bases,
+        rank=payload["rank"],
+        alpha_max=payload.get("alpha_max", 0.5),
+        coefficient_mode=payload.get("coefficient_mode", "diagonal"),
+        device=device,
     )
     raw = payload.get("coefficients_raw") or {}
     with torch.no_grad():
@@ -432,6 +656,73 @@ def fit_kv_coefficients(
     return losses
 
 
+def fit_consistency_kv_coefficients(
+    model,
+    controller: ResidualKVController,
+    processor,
+    samples: Sequence[Sample],
+    build_post_mask: Callable,
+    steps: int = 4,
+    learning_rate: float = 0.05,
+    l2: float = 1e-3,
+    max_grad_norm: float = 1.0,
+    d4_views: int = 2,
+    crop_size: int = 448,
+    progress: bool = True,
+) -> list[float]:
+    """Fit only KV coefficients toward source-model D4-consistent pseudo labels."""
+    freeze_model(model)
+    model.eval()
+    if hasattr(model, "gradient_checkpointing_disable"):
+        model.gradient_checkpointing_disable()
+    model.config.use_cache = False
+    device_samples = list(samples)
+    if not device_samples:
+        raise ValueError("Cannot adapt on an empty unlabeled set")
+    if d4_views < 2:
+        raise ValueError("Unsupervised pseudo-label adaptation requires at least 2 views")
+    from .qwen import _candidate_batch, score_sample
+
+    teacher_labels = [
+        score_sample(model, processor, sample, d4_views=1, crop_size=crop_size)["prediction"]
+        for sample in device_samples
+    ]
+    optimizer = torch.optim.Adam(controller.ttt_parameters(), lr=learning_rate)
+    losses = []
+    step_range = tqdm(
+        range(steps), desc="Unsupervised KV-TTT updates", dynamic_ncols=True,
+        disable=not progress,
+    )
+    for _ in step_range:
+        optimizer.zero_grad(set_to_none=True)
+        accumulated = 0.0
+        denominator = len(device_samples) * (d4_views - 1)
+        for sample, teacher_label in zip(device_samples, teacher_labels):
+            pre, post = load_sample_pair(sample, crop_size)
+            for pre_view, post_view, _ in list(d4_pair(pre, post, d4_views))[1:]:
+                batch, spans = _candidate_batch(
+                    processor, sample, pre_view, post_view,
+                    candidate_labels=(teacher_label,),
+                )
+                batch = {key: value.to(next(model.parameters()).device) for key, value in batch.items()}
+                controller.set_mask(build_post_mask(batch["input_ids"]))
+                logits = model(**batch).logits.float()
+                controller.clear_mask()
+                start, end = spans[0]
+                targets = batch["input_ids"][0, start:end]
+                loss = -torch.log_softmax(
+                    logits[0, start - 1 : end - 1], dim=-1
+                ).gather(-1, targets.unsqueeze(-1)).mean()
+                (loss / denominator).backward()
+                accumulated += float(loss.detach() / denominator)
+        penalty = l2 * sum(p.pow(2).sum() for p in controller.ttt_parameters())
+        penalty.backward()
+        torch.nn.utils.clip_grad_norm_(controller.ttt_parameters(), max_grad_norm)
+        optimizer.step()
+        losses.append(accumulated + float(penalty.detach()))
+    return losses
+
+
 def save_kv_state(
     path: str | Path,
     controller: ResidualKVController,
@@ -446,6 +737,7 @@ def save_kv_state(
         "rank": controller.rank,
         "layers": controller.layers,
         "alpha_max": controller.alpha_max,
+        "coefficient_mode": controller.coefficient_mode,
         "bases": {
             f"{layer_id}:{kind}": controller.bases[(layer_id, kind)].detach().cpu()
             for (layer_id, kind) in controller.bases
