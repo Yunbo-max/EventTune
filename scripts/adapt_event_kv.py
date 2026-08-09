@@ -38,7 +38,11 @@ def main() -> None:
         "this at frozen source samples and keep --support-manifest as the target "
         "support used only for fitting the coefficient vector a.",
     )
-    parser.add_argument("--source-adapter", required=True)
+    parser.add_argument(
+        "--source-adapter",
+        default="",
+        help="optional LoRA starting point; leave empty to adapt the raw base VLM",
+    )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-id", default=DEFAULT_MODEL)
     parser.add_argument("--rank", type=int, default=8)
@@ -66,7 +70,10 @@ def main() -> None:
         print(f"offline subspace: {len(subspace)} samples from {args.subspace_manifest}")
 
     model, processor = load_model(
-        args.model_id, source_adapter=args.source_adapter, gradient_checkpointing=False
+        args.model_id,
+        source_adapter=args.source_adapter or None,
+        gradient_checkpointing=False,
+        use_lora=bool(args.source_adapter),
     )
     freeze_model(model)
     modules, num_layers = discover_language_decoder_kv(model)
@@ -142,14 +149,17 @@ def main() -> None:
 
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    adapter_hash = adapter_fingerprint(args.source_adapter)
+    adapter_hash = adapter_fingerprint(args.source_adapter) if args.source_adapter else None
     model_hash = model_fingerprint(args.model_id)
     save_kv_state(
         output / "kv_state.pt",
         controller,
         args.model_id,
         metadata={
-            "source_adapter": str(Path(args.source_adapter).resolve()),
+            "source_adapter": (
+                str(Path(args.source_adapter).resolve()) if args.source_adapter else None
+            ),
+            "base_model_only": not bool(args.source_adapter),
             "adapter_sha256": adapter_hash,
             "model_sha256": model_hash,
             "subspace_manifest": (

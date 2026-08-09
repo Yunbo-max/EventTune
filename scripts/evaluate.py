@@ -97,18 +97,24 @@ def main() -> None:
                 f"kv-state model_id {payload['model_id']} does not match --model-id {args.model_id}"
             )
         metadata = payload.get("metadata") or {}
-        bound_adapter = metadata.get("adapter_sha256")
-        if not bound_adapter:
+        if "adapter_sha256" not in metadata:
             raise ValueError(
                 f"kv-state {args.kv_state} carries no adapter_sha256 binding; "
-                "refuse to apply it to an unchecked adapter"
+                "refuse to apply it to an unchecked model"
             )
-        if not args.adapter:
+        bound_model = metadata.get("model_sha256")
+        if not bound_model or bound_model != config["model_sha256"]:
             raise ValueError(
-                "kv-state requires --adapter: the KV subspace is source-adapter "
-                "specific and cannot be evaluated on the unadapted model"
+                "Refusing to apply kv-state: its base model fingerprint does not "
+                "match the evaluation model"
             )
-        if bound_adapter != config["adapter_sha256"]:
+        bound_adapter = metadata["adapter_sha256"]
+        if bound_adapter is None:
+            if args.adapter or not args.no_lora or not metadata.get("base_model_only"):
+                raise ValueError(
+                    "Raw-VLM kv-state requires --no-lora and no --adapter"
+                )
+        elif not args.adapter or bound_adapter != config["adapter_sha256"]:
             raise ValueError(
                 "Refusing to apply kv-state: its source adapter fingerprint "
                 f"{bound_adapter} does not match --adapter {config['adapter_sha256']}"

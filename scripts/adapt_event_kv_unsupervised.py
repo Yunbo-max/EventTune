@@ -27,7 +27,11 @@ from eventttt.qwen import DEFAULT_MODEL, load_model, preflight, trainable_parame
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--unlabeled-manifest", required=True)
-    parser.add_argument("--source-adapter", required=True)
+    parser.add_argument(
+        "--source-adapter",
+        default="",
+        help="optional LoRA starting point; leave empty to adapt the raw base VLM",
+    )
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-id", default=DEFAULT_MODEL)
     parser.add_argument("--rank", type=int, default=5)
@@ -49,7 +53,10 @@ def main() -> None:
         raise ValueError("Unlabeled adaptation manifest is empty")
 
     model, processor = load_model(
-        args.model_id, source_adapter=args.source_adapter, gradient_checkpointing=False
+        args.model_id,
+        source_adapter=args.source_adapter or None,
+        gradient_checkpointing=False,
+        use_lora=bool(args.source_adapter),
     )
     freeze_model(model)
     modules, num_layers = discover_language_decoder_kv(model)
@@ -93,8 +100,13 @@ def main() -> None:
         "unlabeled_manifest": str(Path(args.unlabeled_manifest).resolve()),
         "unlabeled_examples": len(samples),
         "d4_views": args.d4_views,
-        "source_adapter": str(Path(args.source_adapter).resolve()),
-        "adapter_sha256": adapter_fingerprint(args.source_adapter),
+        "source_adapter": (
+            str(Path(args.source_adapter).resolve()) if args.source_adapter else None
+        ),
+        "base_model_only": not bool(args.source_adapter),
+        "adapter_sha256": (
+            adapter_fingerprint(args.source_adapter) if args.source_adapter else None
+        ),
         "model_sha256": model_fingerprint(args.model_id),
         "seed": args.seed,
     }
