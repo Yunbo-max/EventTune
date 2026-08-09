@@ -36,10 +36,22 @@ arm has been saved.
 PYTHON_BIN=.venv/bin/python bash scripts/run_balanced_inference_suite.sh
 ```
 
+Before touching the GPU, the runner executes
+`scripts/audit_balanced_inference_assets.py`. It fails closed unless every
+event has exactly 24 support examples (eight per class), no support/query
+overlap, complete image paths, and an existing original prediction set whose
+sample IDs exactly equal the balanced query IDs.
+
 Set `EVENTS` to a space-separated subset when debugging one or more folds.
 Every adapter, KV state, evaluation, and comparison is skipped only when its
 completion artifact exists. Partial evaluations use the existing strict
 configuration-aware resume path.
+
+The runner makes two event-wide passes. It completes the LoRA, supervised-full,
+and unsupervised-diagonal primary arms for every event first; only then does it
+run the diagonal, alpha-3, and unsupervised-full ablations. This prevents a
+fixed compute window from producing exhaustive ablations for early events but
+no primary result for later events.
 
 The final command writes:
 

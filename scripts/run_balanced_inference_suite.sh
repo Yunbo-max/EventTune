@@ -29,6 +29,9 @@ if [[ -z "${EVENTS}" ]]; then
 fi
 [[ -n "${EVENTS// }" ]] || { echo "no prepared events under ${PREP_ROOT}" >&2; exit 1; }
 
+"${PYTHON_BIN}" scripts/audit_balanced_inference_assets.py \
+  --prep-root "${PREP_ROOT}" --runs-root "${RUNS_ROOT}" --events ${EVENTS}
+
 run_kv_arm() {
   local event="$1" split_dir="$2" fold_dir="$3" name="$4" mode="$5" alpha="$6" objective="$7"
   local arm_dir="${fold_dir}/${name}" eval_dir="${arm_dir}/eval"
@@ -65,60 +68,64 @@ run_kv_arm() {
   fi
 }
 
-for event in ${EVENTS}; do
-  split_dir="${PREP_ROOT}/${event}"
-  fold_dir="${RUNS_ROOT}/${event}"
-  log="${fold_dir}/balanced_inference_suite.log"
-  mkdir -p "${fold_dir}"
-  for required in target_support.jsonl target_query.jsonl; do
-    [[ -f "${split_dir}/${required}" ]] || { echo "missing ${split_dir}/${required}" >&2; exit 1; }
+# Two passes guarantee full event coverage for the primary arms before GPU time
+# is spent on ablations.
+for phase in main ablations; do
+  for event in ${EVENTS}; do
+    split_dir="${PREP_ROOT}/${event}"
+    fold_dir="${RUNS_ROOT}/${event}"
+    log="${fold_dir}/balanced_inference_suite.log"
+    mkdir -p "${fold_dir}"
+    for required in target_support.jsonl target_query.jsonl; do
+      [[ -f "${split_dir}/${required}" ]] || { echo "missing ${split_dir}/${required}" >&2; exit 1; }
+    done
+    [[ -f "${fold_dir}/original_eval/predictions.jsonl" ]] || {
+      echo "missing existing original baseline: ${fold_dir}/original_eval/predictions.jsonl" >&2
+      exit 1
+    }
+
+    {
+      echo "[$(date -u +%FT%TZ)] ${event}: ${phase} start"
+      if [[ "${phase}" == "main" ]]; then
+        # Same-event supervised LoRA trained only on this event's labeled support24.
+        if [[ ! -f "${fold_dir}/support24_lora/selection.json" ]]; then
+          "${PYTHON_BIN}" scripts/adapt_event.py \
+            --support-manifest "${split_dir}/target_support.jsonl" \
+            --output-dir "${fold_dir}/support24_lora" --crop-size "${CROP_SIZE}"
+        fi
+        if [[ ! -f "${fold_dir}/support24_lora_eval/metrics.json" ]]; then
+          "${PYTHON_BIN}" scripts/evaluate.py \
+            --manifest "${split_dir}/target_query.jsonl" \
+            --adapter "${fold_dir}/support24_lora" --d4-views "${EVAL_D4_VIEWS}" \
+            --crop-size "${CROP_SIZE}" --output-dir "${fold_dir}/support24_lora_eval"
+        fi
+        if [[ ! -f "${fold_dir}/support24_lora/gain_vs_original.json" ]]; then
+          "${PYTHON_BIN}" scripts/compare_predictions.py \
+            --baseline "${fold_dir}/original_eval/predictions.jsonl" \
+            --adapted "${fold_dir}/support24_lora_eval/predictions.jsonl" \
+            --output "${fold_dir}/support24_lora/gain_vs_original.json"
+        fi
+        run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
+          support24_kv_full_a0p5 full "${KV_ALPHA_MAX}" supervised
+        run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
+          support24_kv_unsupervised diagonal "${KV_ALPHA_MAX}" unsupervised
+      else
+        if [[ "${RUN_DIAGONAL_ABLATION}" == "1" ]]; then
+          run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
+            support24_kv_diagonal_a0p5 diagonal "${KV_ALPHA_MAX}" supervised
+        fi
+        if [[ "${RUN_FULL_ALPHA3_ABLATION}" == "1" ]]; then
+          run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
+            support24_kv_full_a3 full 3.0 supervised
+        fi
+        if [[ "${RUN_UNSUPERVISED_FULL_ABLATION}" == "1" ]]; then
+          run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
+            support24_kv_unsupervised_full full "${KV_ALPHA_MAX}" unsupervised
+        fi
+      fi
+      echo "[$(date -u +%FT%TZ)] ${event}: ${phase} done"
+    } >>"${log}" 2>&1
   done
-  [[ -f "${fold_dir}/original_eval/predictions.jsonl" ]] || {
-    echo "missing existing original baseline: ${fold_dir}/original_eval/predictions.jsonl" >&2
-    exit 1
-  }
-
-  {
-    echo "[$(date -u +%FT%TZ)] ${event}: suite start"
-
-    # Same-event supervised LoRA trained only on this event's labeled support24.
-    if [[ ! -f "${fold_dir}/support24_lora/selection.json" ]]; then
-      "${PYTHON_BIN}" scripts/adapt_event.py \
-        --support-manifest "${split_dir}/target_support.jsonl" \
-        --output-dir "${fold_dir}/support24_lora" --crop-size "${CROP_SIZE}"
-    fi
-    if [[ ! -f "${fold_dir}/support24_lora_eval/metrics.json" ]]; then
-      "${PYTHON_BIN}" scripts/evaluate.py \
-        --manifest "${split_dir}/target_query.jsonl" \
-        --adapter "${fold_dir}/support24_lora" --d4-views "${EVAL_D4_VIEWS}" \
-        --crop-size "${CROP_SIZE}" --output-dir "${fold_dir}/support24_lora_eval"
-    fi
-    if [[ ! -f "${fold_dir}/support24_lora/gain_vs_original.json" ]]; then
-      "${PYTHON_BIN}" scripts/compare_predictions.py \
-        --baseline "${fold_dir}/original_eval/predictions.jsonl" \
-        --adapted "${fold_dir}/support24_lora_eval/predictions.jsonl" \
-        --output "${fold_dir}/support24_lora/gain_vs_original.json"
-    fi
-
-    run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
-      support24_kv_full_a0p5 full "${KV_ALPHA_MAX}" supervised
-    run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
-      support24_kv_unsupervised diagonal "${KV_ALPHA_MAX}" unsupervised
-
-    if [[ "${RUN_DIAGONAL_ABLATION}" == "1" ]]; then
-      run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
-        support24_kv_diagonal_a0p5 diagonal "${KV_ALPHA_MAX}" supervised
-    fi
-    if [[ "${RUN_FULL_ALPHA3_ABLATION}" == "1" ]]; then
-      run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
-        support24_kv_full_a3 full 3.0 supervised
-    fi
-    if [[ "${RUN_UNSUPERVISED_FULL_ABLATION}" == "1" ]]; then
-      run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
-        support24_kv_unsupervised_full full "${KV_ALPHA_MAX}" unsupervised
-    fi
-    echo "[$(date -u +%FT%TZ)] ${event}: suite done"
-  } >>"${log}" 2>&1
 done
 
 "${PYTHON_BIN}" scripts/summarize_balanced_inference.py \
