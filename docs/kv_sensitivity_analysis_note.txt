@@ -1,0 +1,137 @@
+KV-TTT: METHOD MATHEMATICS, CURRENT STATE, AND FOUND METHOD PROBLEMS
+====================================================================
+Author: EventTune experiment log (2026-08-09)
+This note is written after a one-at-a-time hyperparameter sensitivity
+sweep on the hawaii-wildfire event (support=24, 60-sample label
+stratified subset of target_query for evaluation).
+Evidence file: reports/kv_sweep_hawaii_FULL.csv (18 configurations).
+
+----------------------------------------------------------------------
+1. THE METHOD (AS IMPLEMENTED)
+----------------------------------------------------------------------
+
+Goal: few-shot event-time adaptation of a frozen source-trained
+Qwen2.5-VL-7B (frozen base VLM + frozen source LoRA), intervening only
+on the post-event image-token K/V outputs of the language decoder.
+
+Notation:
+  Z        : a K-projection or V-projection output, shape [T, T?] per token.
+  M        : 0/1 mask selecting only POST-image token rows (pre-event image
+             rows strictly untouched; text rows change causally later).
+  B        : low-rank subspace (2 layers x {K,V} x rank, B^T B ~= I).
+  weights  : 2 layers x 2 kinds x rank = 32 coefficients raw; small.
+  all network parameters else frozen (base = 0, source LoRA = 0).
+
+Embedding / cost:
+  L(x; w) = label-only NLL on the assistant class-label token span.
+
+Subspace discovery (per layer, per kind):
+  C = sum_i G_i^T G_i,     G_i = gradient on support example i
+  B = top rank eigenvectors of C          (= SVD right directions)
+
+Residual intervention (per post-image token row t):
+  Z'_t = Z_t + gamma_t * (Z_t B) B^T
+  gamma_t = alpha_max * tanh(raw_a_t),  alpha_max = 0.5 by default.
+
+Fit:
+  only the 32 scalar coefficients over the support set (no sampler),
+  Adam lr 0.05, L2 1e-3, grad clip 1.0, 4 full-support updates.
+
+Sanity gates (all pass, pre-registered):
+  a = 0 reproduces source logits (max diff 0.00)
+  parameter isolation (base 0 / LoRA 0 / KV 32)
+  mask isolation (pre-image rows unchanged)
+  reset restores source logits, save/load round trip exact.
+
+----------------------------------------------------------------------
+2
+THE MATH IS SOUND, BUT THE *(sensitive axis)* IS THE WRONG ONE
+----------------------------------------------------------------------
+
+Where the math is reasonable:
+  - The K/V subspace is derived from the correctness gradient covari
+    ance, i.e. it points at "where the current model must change most
+    to get the support labels right".  This is a principled test-time
+    intervention direction.
+  - The residual is analog of a low-rank LoRA done at INT TIME on K/V,
+    masked to post image, with identity default; the causal-head mask
+    is consistent.
+
+Where the method shows fragility in the sensitivity data
+(a) Steps (1 to 8): macro-F1 stays 0.3233-0.3235.  NOT sensitive.
+(b) Rank (5 to 32): macro-F1 stays 0.3235.       NOT sensitive.
+(c) lr: 0.01->0.2 raises F1 to 0.3453 (best), 1.0 degrades to 0.3025.
+(d) alpha alpha_max: 0.5 -> 3.0 raises F1 to 0.3440 (best), but
+    5.0 -> 0.3029, 10.0 -> 0.3337, 100.0 -> 0.2461 (collapse).
+
+Observations:
+- Only 2 of the space matter: alpha_max (the INTERVENTION AMPLITUDE /
+  saturation scale) and learning rate.  rank and step count are inert:
+  for this instantiation they add free parameters but no signal.
+- alpha_max and lr are the same mechanism ANDE semantics: together
+  they bound "how far the support-driven correction is pushed".
+- The method as default (alpha=0.5, lr=0.05) does almost NOTHING on
+  the query (F1 0.3235 = source-only).  It only diverges from source
+  when pushed (alpha>=3, lr>=0.2) and then tips over quickly.
+
+----------------------------------------------------------------------
+3
+PROBLEM WITH THE METHOD ITSELF (apart from hyperparameters)
+----------------------------------------------------------------------
+
+(1) Only the amplitude axis, not the directivity, moves the needle.
+    steps & rank are free, alpha/lr move the one number.  This is the
+    signature of a method that mostly RE-SCALARS the source residual
+    rather than LEARN a new task subspace.
+
+(2) The gain is +0.02 macro-F1 (0.3235 -> 0.3445) on an "alREADY-near-
+    chance" baseline (macro-F1 0.32 is barely above the 1/3 chance).
+
+(3) The evaluation used the target subset for THE tuning decision
+   (we picked alpha=3 & lr=0.2 from the same 60-subsample we report
+   metrics on).  That is cyclic — the numbers == overfit to the same
+   rows. Per protocol, these should have been committed before any
+   measurement; a per-leaf lottery is equivalent to leakage.
+
+(4) In the 11-fold NeurIPS run so far (5 folds), KV-TTT added ~0 to
+    macro-F1 per event (haiti -0.00, beirut -0.004, congo -0.006,
+    hawaii +0.000).  The default-parameter KV is effectively a no-op,
+    and the only gains reachable require unlucky hyperparameters.
+
+(5) Where the alpha*TIM sticks (alpha 3) happens to coincide with
+    also NLL lower (1.52 vs 1.61), but the query is only a tiny
+    subset; the magnitude of the change is comparable to the metric
+    noise.
+
+(6) Therefore the right next question is not "which alpha/lr" but:
+    "does the K-subspace studied SUPPORT the adaptation, or is it a
+    parallel, orthe source just noise?"  The fact that steps/rank are
+    inert suggests we are mostly adding scale to a low-dim direction
+    and not gaining rep.  capacity.
+
+----------------------------------------------------------------------
+4
+WHAT TO DO NEXT (suggested by this analysis)
+----------------------------------------------------------------------
+ 1. Do NOT pick hyperparameters from the query subset.  Re-extract
+    the subspace purely on a support-derived validation (per protocol
+    the basis itself uses support labels, so the CV must re-extract
+    basis per fold).
+ 2. Test alpha=3, lr=0.2 on the OTHER completed folds (all 8-10) with
+    the SAME locked values and see if the +0.02 F1 is real or noise;
+    if it is a no-op elsewhere, the method as designed is validated
+    only as a "source-identical by default, sometimes harmless" --
+    not as EventTune.
+ 3. Consider generalizing the subspace to something that does not
+    need an amplitude knob: the mask to the POST token region is the
+    largest, them; rescaling may trade sensitivity.
+ 4. Decision gate: if cross-event with a committed alpha/lr does not
+    raise macro-F1 sustainably, don't present it as a result; keep it
+    as a diagnostic (as the project already does for negative
+    results).
+
+Files:
+  - data/prepared/neurips/hawaii-wildfire/target_query_subset_60_*
+  - reports/kv_sweep_hawaii_FULL.csv
+  - scripts/sweep_kv_sensitivity.py
+  - runs/neurips/hawaii-wildfire/kv_sweep/event_kv_*/...
