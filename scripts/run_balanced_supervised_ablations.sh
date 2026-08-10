@@ -12,8 +12,11 @@ L2="${L2:-1e-3}"
 
 run_arm() {
   local event="$1" manifest="$2" name="$3" rank="$4" steps="$5" layers="$6"
-  local split_dir="${PREP_ROOT}/${event}" fold_dir="${RUNS_ROOT}/${event}"
-  local arm_dir="${fold_dir}/${name}" eval_dir="${arm_dir}/eval"
+  local split_dir fold_dir arm_dir eval_dir
+  split_dir="${PREP_ROOT}/${event}"
+  fold_dir="${RUNS_ROOT}/${event}"
+  arm_dir="${fold_dir}/${name}"
+  eval_dir="${arm_dir}/eval"
   mkdir -p "${arm_dir}"
   if [[ ! -f "${arm_dir}/kv_state.pt" ]]; then
     "${PYTHON_BIN}" scripts/adapt_event_kv.py \
