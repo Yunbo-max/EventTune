@@ -9,7 +9,7 @@ set -euo pipefail
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 PREP_ROOT="${PREP_ROOT:-data/prepared/neurips}"
 RUNS_ROOT="${RUNS_ROOT:-runs/neurips}"
-EVENTS="${EVENTS:-}"
+EVENTS="${EVENTS:-hawaii-wildfire libya-flood noto-earthquake turkey-earthquake}"
 CROP_SIZE="${CROP_SIZE:-448}"
 EVAL_D4_VIEWS="${EVAL_D4_VIEWS:-1}"
 KV_RANK="${KV_RANK:-5}"
@@ -24,9 +24,6 @@ RUN_FULL_ALPHA3_ABLATION="${RUN_FULL_ALPHA3_ABLATION:-1}"
 RUN_UNSUPERVISED_FULL_ABLATION="${RUN_UNSUPERVISED_FULL_ABLATION:-1}"
 
 mkdir -p "${RUNS_ROOT}" logs
-if [[ -z "${EVENTS}" ]]; then
-  EVENTS="$(find "${PREP_ROOT}" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tr '\n' ' ')"
-fi
 [[ -n "${EVENTS// }" ]] || { echo "no prepared events under ${PREP_ROOT}" >&2; exit 1; }
 
 "${PYTHON_BIN}" scripts/audit_balanced_inference_assets.py \

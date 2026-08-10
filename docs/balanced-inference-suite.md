@@ -30,9 +30,15 @@ The locked KV defaults are rank 5, four updates, learning rate 0.05, L2
 Unsupervised adaptation uses two D4 views. Query labels are used only after an
 arm has been saved.
 
+For the public BRIGHT instance release and the fixed split seed used here, the
+strictly uniform events are Hawaii wildfire, Libya flood, Noto earthquake, and
+Turkey earthquake: each has support 8/8/8 and query 100/100/100. Events with a
+short class are not silently called uniform and are excluded from this suite.
+
 ## Execution and resume
 
 ```bash
+PYTHON_BIN=.venv/bin/python bash scripts/run_balanced_originals.sh
 PYTHON_BIN=.venv/bin/python bash scripts/run_balanced_inference_suite.sh
 ```
 
