@@ -1,26 +1,24 @@
 # Balanced same-event inference progress
 
-Last updated: 2026-08-10 13:43 UTC.
+Last updated: 2026-08-10 22:32 UTC.
 
-Status: **primary suite complete; expanded ablations in progress**. All four
-uniform events and the initially requested primary and amplitude/controller
-arms have finished. The publication-facing primary outputs are
+Status: **complete**. All four uniform events, expanded supervised ablations,
+and multiseed robustness runs have finished. The publication-facing primary outputs are
 `balanced_inference_results.md` and `balanced_inference_results.json` in this
 directory.
 
-The NeurIPS-level supervised ablation expansion is 36/40 complete: Hawaii,
-Libya, and Noto are 10/10; Turkey is 6/10. It covers support budget 12/24/48,
+The NeurIPS-level supervised ablation expansion is 40/40 complete. It covers support budget 12/24/48,
 layers 14/27/14+27, ranks 5/8/16/32, and update steps 1/2/4/8 using raw VLM,
 same-event labeled support, full KV-TTT, and alpha 3. No run has failed or hit
 CUDA OOM.
 
-A multiseed robustness suite is queued to start automatically when the current
-ablation runner exits. It adds two independently sampled, balanced,
+A multiseed robustness suite is also complete (16/16). It adds two independently sampled, balanced,
 query-tile-disjoint support24 seeds for Full and Diagonal alpha-3 KV-TTT on all
-four events (16 new runs). Final analysis will report three-seed mean and
-standard deviation, paired class-stratified bootstrap 95% confidence intervals,
-and paired permutation significance tests against raw VLM and between Full and
-Diagonal.
+four events (16 new runs). The final three-seed paired analysis is in
+`multiseed_significance.md` and `multiseed_significance.json`: Full versus raw
+VLM has mean delta Macro-F1 +0.0457 (95% CI +0.0046 to +0.0847, p=0.0167),
+and Diagonal versus raw VLM has +0.0399 (95% CI +0.0063 to +0.0734,
+p=0.0061). Full versus Diagonal is not significant (p=0.7347).
 
 This is a live execution snapshot, not the final results table. The experiment
 uses only the four strictly uniform BRIGHT events (support 8/8/8 and query
