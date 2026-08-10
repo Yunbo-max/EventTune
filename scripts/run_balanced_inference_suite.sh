@@ -31,7 +31,9 @@ mkdir -p "${RUNS_ROOT}" logs
 
 run_kv_arm() {
   local event="$1" split_dir="$2" fold_dir="$3" name="$4" mode="$5" alpha="$6" objective="$7"
-  local arm_dir="${fold_dir}/${name}" eval_dir="${arm_dir}/eval"
+  local arm_dir eval_dir
+  arm_dir="${fold_dir}/${name}"
+  eval_dir="${arm_dir}/eval"
   if [[ ! -f "${arm_dir}/kv_state.pt" ]]; then
     if [[ "${objective}" == "supervised" ]]; then
       "${PYTHON_BIN}" scripts/adapt_event_kv.py \
