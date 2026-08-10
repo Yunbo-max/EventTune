@@ -20,6 +20,7 @@ KV_LAYERS="${KV_LAYERS:-14 27}"
 KV_ALPHA_MAX="${KV_ALPHA_MAX:-0.5}"
 UNSUPERVISED_D4_VIEWS="${UNSUPERVISED_D4_VIEWS:-2}"
 RUN_DIAGONAL_ABLATION="${RUN_DIAGONAL_ABLATION:-1}"
+RUN_DIAGONAL_ALPHA3_ABLATION="${RUN_DIAGONAL_ALPHA3_ABLATION:-1}"
 RUN_FULL_ALPHA3_ABLATION="${RUN_FULL_ALPHA3_ABLATION:-1}"
 RUN_UNSUPERVISED_FULL_ABLATION="${RUN_UNSUPERVISED_FULL_ABLATION:-1}"
 
@@ -106,16 +107,20 @@ for phase in main ablations; do
         fi
         run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
           support24_kv_full_a0p5 full "${KV_ALPHA_MAX}" supervised
-        run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
-          support24_kv_unsupervised diagonal "${KV_ALPHA_MAX}" unsupervised
-      else
         if [[ "${RUN_DIAGONAL_ABLATION}" == "1" ]]; then
           run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
             support24_kv_diagonal_a0p5 diagonal "${KV_ALPHA_MAX}" supervised
         fi
+        run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
+          support24_kv_unsupervised diagonal "${KV_ALPHA_MAX}" unsupervised
+      else
         if [[ "${RUN_FULL_ALPHA3_ABLATION}" == "1" ]]; then
           run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
             support24_kv_full_a3 full 3.0 supervised
+        fi
+        if [[ "${RUN_DIAGONAL_ALPHA3_ABLATION}" == "1" ]]; then
+          run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \
+            support24_kv_diagonal_a3 diagonal 3.0 supervised
         fi
         if [[ "${RUN_UNSUPERVISED_FULL_ABLATION}" == "1" ]]; then
           run_kv_arm "${event}" "${split_dir}" "${fold_dir}" \

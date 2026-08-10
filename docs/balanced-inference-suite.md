@@ -22,6 +22,7 @@ unless the sample-ID sets are identical.
 | `support24_kv_full_a0p5` | raw VLM | labeled correctness-gradient basis and bounded full mixing |
 | `support24_kv_unsupervised` | raw VLM | images only; identity-view pseudo-label consistency |
 | `support24_kv_diagonal_a0p5` | raw VLM | labeled diagonal-controller ablation |
+| `support24_kv_diagonal_a3` | raw VLM | labeled diagonal amplitude ablation |
 | `support24_kv_full_a3` | raw VLM | labeled amplitude ablation |
 | `support24_kv_unsupervised_full` | raw VLM | images only; full-controller ablation |
 
@@ -53,11 +54,11 @@ Every adapter, KV state, evaluation, and comparison is skipped only when its
 completion artifact exists. Partial evaluations use the existing strict
 configuration-aware resume path.
 
-The runner makes two event-wide passes. It completes the LoRA, supervised-full,
-and unsupervised-diagonal primary arms for every event first; only then does it
-run the diagonal, alpha-3, and unsupervised-full ablations. This prevents a
-fixed compute window from producing exhaustive ablations for early events but
-no primary result for later events.
+The runner makes two passes. Within the main pass, each event completes LoRA,
+supervised-full, supervised-diagonal, and unsupervised-diagonal before moving
+to the next event, so the most important within-event comparison becomes
+available quickly. The second pass runs the alpha-3 and unsupervised-full
+ablations.
 
 The final command writes:
 
