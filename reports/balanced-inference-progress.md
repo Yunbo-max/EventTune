@@ -1,6 +1,11 @@
 # Balanced same-event inference progress
 
-Last updated: 2026-08-10 02:10 UTC.
+Last updated: 2026-08-10 08:01 UTC.
+
+Status: **complete**. All four uniform events and all requested primary and
+ablation arms have finished. The publication-facing outputs are
+`balanced_inference_results.md` and `balanced_inference_results.json` in this
+directory.
 
 This is a live execution snapshot, not the final results table. The experiment
 uses only the four strictly uniform BRIGHT events (support 8/8/8 and query
@@ -29,15 +34,15 @@ The Hawaii supervised-diagonal run is not a completed negative result. Its
 first attempt was interrupted by CUDA OOM when an unrelated GPU experiment
 overlapped the suite, so it remains pending and will be rerun in isolation.
 
-## Live queue
+## Final queue status
 
-- Running at snapshot time: Libya flood support24 LoRA support-only CV.
-- Next: Hawaii supervised diagonal KV-TTT, alpha 0.5.
-- Then complete Libya main arms, followed by Noto and Turkey main arms.
-- Per-event main order: support24 LoRA, supervised full KV-TTT, supervised
-  diagonal KV-TTT, unsupervised diagonal KV-TTT.
-- Second pass: supervised full alpha 3, supervised diagonal alpha 3, and
-  unsupervised full-controller ablations for all four events.
+- Completed: raw-VLM originals and support24 LoRA for all four events.
+- Completed primary KV-TTT: supervised full alpha 3, supervised diagonal
+  alpha 3, and unsupervised diagonal alpha 3 for all four events.
+- Completed ablations: alpha-0.5 amplitude variants and unsupervised
+  full-controller variants for all four events.
+- No suite process remains active and all result comparisons contain 300
+  query examples per event and arm.
 
 ## Resume and failure behavior
 
