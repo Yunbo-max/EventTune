@@ -19,15 +19,16 @@ unless the sample-ID sets are identical.
 |---|---|---|
 | `original_eval` | raw VLM | none |
 | `support24_lora` | raw VLM | labeled, support-only CV and final LoRA fit |
-| `support24_kv_full_a0p5` | raw VLM | labeled correctness-gradient basis and bounded full mixing |
-| `support24_kv_unsupervised` | raw VLM | images only; identity-view pseudo-label consistency |
-| `support24_kv_diagonal_a0p5` | raw VLM | labeled diagonal-controller ablation |
-| `support24_kv_diagonal_a3` | raw VLM | labeled diagonal amplitude ablation |
-| `support24_kv_full_a3` | raw VLM | labeled amplitude ablation |
-| `support24_kv_unsupervised_full` | raw VLM | images only; full-controller ablation |
+| `support24_kv_full_a3` | raw VLM | labeled correctness-gradient basis and bounded full mixing; primary alpha 3 |
+| `support24_kv_diagonal_a3` | raw VLM | labeled diagonal controller; primary alpha 3 |
+| `support24_kv_unsupervised_a3` | raw VLM | images only; identity-view pseudo-label consistency; primary alpha 3 |
+| `support24_kv_full_a0p5` | raw VLM | labeled alpha-0.5 amplitude ablation |
+| `support24_kv_diagonal_a0p5` | raw VLM | labeled alpha-0.5 amplitude ablation |
+| `support24_kv_unsupervised` | raw VLM | images only; alpha-0.5 amplitude ablation |
+| `support24_kv_unsupervised_full_a3` | raw VLM | images only; full-controller ablation at alpha 3 |
 
-The locked KV defaults are rank 5, four updates, learning rate 0.05, L2
-`1e-3`, decoder layers 14 and 27, crop size 448, and one evaluation view.
+The locked KV defaults are rank 5, alpha maximum 3, four updates, learning rate
+0.05, L2 `1e-3`, decoder layers 14 and 27, crop size 448, and one evaluation view.
 Unsupervised adaptation uses two D4 views. Query labels are used only after an
 arm has been saved.
 
@@ -55,10 +56,10 @@ completion artifact exists. Partial evaluations use the existing strict
 configuration-aware resume path.
 
 The runner makes two passes. Within the main pass, each event completes LoRA,
-supervised-full, supervised-diagonal, and unsupervised-diagonal before moving
-to the next event, so the most important within-event comparison becomes
-available quickly. The second pass runs the alpha-3 and unsupervised-full
-ablations.
+supervised-full alpha 3, supervised-diagonal alpha 3, and
+unsupervised-diagonal alpha 3 before moving to the next event, so the most
+important within-event comparison becomes available quickly. The second pass
+runs the alpha-0.5 amplitude and unsupervised-full controller ablations.
 
 The final command writes:
 

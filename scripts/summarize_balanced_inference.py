@@ -9,12 +9,14 @@ from pathlib import Path
 
 ARMS = {
     "support24_lora": "support24_lora/gain_vs_original.json",
-    "kv_full_a0p5": "support24_kv_full_a0p5/gain_vs_original.json",
-    "kv_unsupervised": "support24_kv_unsupervised/gain_vs_original.json",
-    "kv_diagonal_a0p5": "support24_kv_diagonal_a0p5/gain_vs_original.json",
-    "kv_diagonal_a3": "support24_kv_diagonal_a3/gain_vs_original.json",
     "kv_full_a3": "support24_kv_full_a3/gain_vs_original.json",
-    "kv_unsupervised_full": "support24_kv_unsupervised_full/gain_vs_original.json",
+    "kv_diagonal_a3": "support24_kv_diagonal_a3/gain_vs_original.json",
+    "kv_unsupervised_a3": "support24_kv_unsupervised_a3/gain_vs_original.json",
+    "kv_full_a0p5_ablation": "support24_kv_full_a0p5/gain_vs_original.json",
+    "kv_diagonal_a0p5_ablation": "support24_kv_diagonal_a0p5/gain_vs_original.json",
+    "kv_unsupervised_a0p5_ablation": "support24_kv_unsupervised/gain_vs_original.json",
+    "kv_unsupervised_full_a3_ablation": "support24_kv_unsupervised_full_a3/gain_vs_original.json",
+    "kv_unsupervised_full_a0p5_legacy": "support24_kv_unsupervised_full/gain_vs_original.json",
 }
 
 
