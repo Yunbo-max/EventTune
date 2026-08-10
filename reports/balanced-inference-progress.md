@@ -1,11 +1,26 @@
 # Balanced same-event inference progress
 
-Last updated: 2026-08-10 08:01 UTC.
+Last updated: 2026-08-10 13:43 UTC.
 
-Status: **complete**. All four uniform events and all requested primary and
-ablation arms have finished. The publication-facing outputs are
+Status: **primary suite complete; expanded ablations in progress**. All four
+uniform events and the initially requested primary and amplitude/controller
+arms have finished. The publication-facing primary outputs are
 `balanced_inference_results.md` and `balanced_inference_results.json` in this
 directory.
+
+The NeurIPS-level supervised ablation expansion is 36/40 complete: Hawaii,
+Libya, and Noto are 10/10; Turkey is 6/10. It covers support budget 12/24/48,
+layers 14/27/14+27, ranks 5/8/16/32, and update steps 1/2/4/8 using raw VLM,
+same-event labeled support, full KV-TTT, and alpha 3. No run has failed or hit
+CUDA OOM.
+
+A multiseed robustness suite is queued to start automatically when the current
+ablation runner exits. It adds two independently sampled, balanced,
+query-tile-disjoint support24 seeds for Full and Diagonal alpha-3 KV-TTT on all
+four events (16 new runs). Final analysis will report three-seed mean and
+standard deviation, paired class-stratified bootstrap 95% confidence intervals,
+and paired permutation significance tests against raw VLM and between Full and
+Diagonal.
 
 This is a live execution snapshot, not the final results table. The experiment
 uses only the four strictly uniform BRIGHT events (support 8/8/8 and query
@@ -34,7 +49,7 @@ The Hawaii supervised-diagonal run is not a completed negative result. Its
 first attempt was interrupted by CUDA OOM when an unrelated GPU experiment
 overlapped the suite, so it remains pending and will be rerun in isolation.
 
-## Final queue status
+## Primary queue status
 
 - Completed: raw-VLM originals and support24 LoRA for all four events.
 - Completed primary KV-TTT: supervised full alpha 3, supervised diagonal
