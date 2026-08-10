@@ -1,0 +1,62 @@
+# Balanced same-event inference progress
+
+Last updated: 2026-08-10 02:10 UTC.
+
+This is a live execution snapshot, not the final results table. The experiment
+uses only the four strictly uniform BRIGHT events (support 8/8/8 and query
+100/100/100). Every adaptation starts independently from raw
+`Qwen/Qwen2.5-VL-7B-Instruct` and uses the same event's support24. All deltas
+below are against raw-VLM `original_eval` on the identical 300 query IDs.
+
+## Completed raw-VLM baselines
+
+| Event | Query N | Macro-F1 | Balanced accuracy | NLL |
+|---|---:|---:|---:|---:|
+| Hawaii wildfire | 300 | 0.1992 | 0.3433 | 1.2491 |
+| Libya flood | 300 | 0.2585 | 0.3633 | 1.3331 |
+| Noto earthquake | 300 | 0.2087 | 0.3333 | 1.2779 |
+| Turkey earthquake | 300 | 0.2273 | 0.3400 | 1.4333 |
+
+## Completed adapted results
+
+| Event | Arm | Query N | Macro-F1 | Delta F1 | Delta balanced accuracy | NLL reduction |
+|---|---|---:|---:|---:|---:|---:|
+| Hawaii wildfire | support24 LoRA | 300 | 0.3375 | +0.1383 | +0.0200 | +0.1540 |
+| Hawaii wildfire | supervised full KV-TTT, alpha 0.5 | 300 | 0.2163 | +0.0171 | +0.0033 | +0.0374 |
+| Hawaii wildfire | unsupervised diagonal KV-TTT, alpha 0.5 | 300 | 0.1819 | -0.0173 | -0.0067 | +0.0034 |
+
+The Hawaii supervised-diagonal run is not a completed negative result. Its
+first attempt was interrupted by CUDA OOM when an unrelated GPU experiment
+overlapped the suite, so it remains pending and will be rerun in isolation.
+
+## Live queue
+
+- Running at snapshot time: Libya flood support24 LoRA support-only CV.
+- Next: Hawaii supervised diagonal KV-TTT, alpha 0.5.
+- Then complete Libya main arms, followed by Noto and Turkey main arms.
+- Per-event main order: support24 LoRA, supervised full KV-TTT, supervised
+  diagonal KV-TTT, unsupervised diagonal KV-TTT.
+- Second pass: supervised full alpha 3, supervised diagonal alpha 3, and
+  unsupervised full-controller ablations for all four events.
+
+## Resume and failure behavior
+
+The suite is artifact-resumable: completed adapters, KV states, evaluations,
+and comparisons are skipped only when their completion artifacts exist, while
+partial evaluations resume through the configuration-aware evaluation path.
+Restarting
+
+```bash
+PYTHON_BIN=.venv/bin/python bash scripts/run_balanced_inference_suite.sh
+```
+
+therefore continues the queue without discarding completed results. A network
+failure does not affect local training or evaluation because the model and
+BRIGHT data are cached locally. It can delay only GitHub/Hugging Face
+publication; the local Git commit and run artifacts remain available for a
+later retry.
+
+The final complete suite will generate
+`reports/balanced_inference_results.json` and
+`reports/balanced_inference_results.md` using
+`scripts/summarize_balanced_inference.py`.
