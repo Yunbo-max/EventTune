@@ -6,7 +6,7 @@ exclude adaptation and measure only the final query pass.
 | Method | Total seconds | Seconds/sample | Peak GPU memory |
 |---|---:|---:|---:|
 | Pure VLM | 402.154 | 1.3405 | 17,470 MiB |
-| support24 LoRA | 411.743 | 1.3725 | 17,508 MiB |
+| legacy CV-selected support24 LoRA | 411.743 | 1.3725 | 17,508 MiB |
 | Full KV-TTT | **401.465** | **1.3382** | 17,470 MiB |
 | Diagonal KV-TTT | 401.522 | 1.3384 | 17,470 MiB |
 
@@ -17,7 +17,8 @@ Diagonal 20 (each serialized state about 44 KiB), versus 10,092,544 trainable
 LoRA parameters (about 39.5 MiB). Observed KV extraction averaged about 17 s
 and coefficient fitting about 53 s.
 
-Accuracy and efficiency should be stated together: KV-TTT significantly beats
-the raw VLM, while fixed support24 LoRA remains more accurate on these four
-events. KV-TTT offers a substantially smaller adaptation state and essentially
-zero query-time overhead.
+This benchmark's LoRA adapter is the historical support-CV-selected checkpoint,
+not the clean fixed-8 baseline used by the main accuracy table. The timing and
+memory comparison remains valid for the same rank-16 LoRA architecture, but its
+accuracy must not be mixed with the clean fixed-8 results. KV-TTT offers a
+substantially smaller adaptation state and essentially zero query-time overhead.

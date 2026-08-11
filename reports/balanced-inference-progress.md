@@ -2,10 +2,12 @@
 
 Last updated: 2026-08-11 UTC.
 
-Status: **complete**. All four uniform events, expanded supervised ablations,
-and multiseed robustness runs have finished. The publication-facing primary outputs are
-`balanced_inference_results.md` and `balanced_inference_results.json` in this
-directory.
+Status: **complete**. All four uniform events, supervised ablations, multiseed
+robustness, clean fixed-8 LoRA, and rank-16 Full/Diagonal alpha sweeps have
+finished. The current publication-facing outputs are
+`fixed8_and_scaling_diagnostics.md`, `rank16_full_diagonal_alpha_sweep.md`, and
+`paper/main.tex`. `balanced_inference_results.md/json` preserve the earlier
+CV-selected-LoRA protocol and are not the clean fixed-8 primary table.
 
 The extended mechanism and robustness suite is also complete: mean-gradient,
 centered-covariance, three-seed random-subspace controls, alpha
@@ -33,7 +35,7 @@ VLM has mean delta Macro-F1 +0.0457 (95% CI +0.0046 to +0.0847, p=0.0167),
 and Diagonal versus raw VLM has +0.0399 (95% CI +0.0063 to +0.0734,
 p=0.0061). Full versus Diagonal is not significant (p=0.7347).
 
-This is a live execution snapshot, not the final results table. The experiment
+The experiment
 uses only the four strictly uniform BRIGHT events (support 8/8/8 and query
 100/100/100). Every adaptation starts independently from raw
 `Qwen/Qwen2.5-VL-7B-Instruct` and uses the same event's support24. All deltas
@@ -48,17 +50,15 @@ below are against raw-VLM `original_eval` on the identical 300 query IDs.
 | Noto earthquake | 300 | 0.2087 | 0.3333 | 1.2779 |
 | Turkey earthquake | 300 | 0.2273 | 0.3400 | 1.4333 |
 
-## Completed adapted results
+## Current fixed-configuration main results
 
-| Event | Arm | Query N | Macro-F1 | Delta F1 | Delta balanced accuracy | NLL reduction |
-|---|---|---:|---:|---:|---:|---:|
-| Hawaii wildfire | support24 LoRA | 300 | 0.3375 | +0.1383 | +0.0200 | +0.1540 |
-| Hawaii wildfire | supervised full KV-TTT, alpha 0.5 | 300 | 0.2163 | +0.0171 | +0.0033 | +0.0374 |
-| Hawaii wildfire | unsupervised diagonal KV-TTT, alpha 0.5 | 300 | 0.1819 | -0.0173 | -0.0067 | +0.0034 |
-
-The Hawaii supervised-diagonal run is not a completed negative result. Its
-first attempt was interrupted by CUDA OOM when an unrelated GPU experiment
-overlapped the suite, so it remains pending and will be rerun in isolation.
+| Event | Raw VLM | LoRA fixed8 | Full rank16 alpha3 | Diagonal rank16 alpha3 |
+|---|---:|---:|---:|---:|
+| Hawaii wildfire | 0.1992 | **0.3526** | 0.2957 | 0.2918 |
+| Libya flood | 0.2585 | 0.2776 | **0.3739** | 0.2560 |
+| Noto earthquake | 0.2087 | **0.3495** | 0.3112 | 0.2820 |
+| Turkey earthquake | 0.2273 | 0.2147 | **0.3025** | 0.2879 |
+| Mean | 0.2234 | 0.2986 | **0.3208** | 0.2794 |
 
 ## Primary queue status
 
@@ -87,7 +87,6 @@ BRIGHT data are cached locally. It can delay only GitHub/Hugging Face
 publication; the local Git commit and run artifacts remain available for a
 later retry.
 
-The final complete suite will generate
-`reports/balanced_inference_results.json` and
-`reports/balanced_inference_results.md` using
-`scripts/summarize_balanced_inference.py`.
+The legacy suite summary can be regenerated with
+`scripts/summarize_balanced_inference.py`; the clean fixed-8 and rank-16 sweep
+reports are maintained separately to prevent protocol mixing.

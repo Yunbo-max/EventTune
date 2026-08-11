@@ -1,5 +1,6 @@
 {
-  "baseline": "fixed_support24_lora",
+  "baseline": "legacy_cv_selected_support24_lora",
+  "note": "Historical conditional comparison against support-CV-selected LoRA, not the clean fixed-8 main-table baseline.",
   "kv_support_seeds": [0, 1, 2],
   "lora_support_seeds": [0],
   "iterations": 10000,

@@ -1,5 +1,9 @@
 # Failure and efficiency analysis
 
+The LoRA row below is the original fixed-support, per-event-CV-selected LoRA,
+not the later clean fixed-8 baseline. KV rows average three support seeds of the
+compact rank-5 alpha-3 controller.
+
 ## Mean per-class F1
 
 | Method | Intact | Damaged | Destroyed | Macro-F1 |
@@ -9,7 +13,7 @@
 | full | 0.2696 | 0.2178 | 0.3201 | 0.2692 |
 | diagonal | 0.0999 | 0.3529 | 0.3371 | 0.2633 |
 
-KV values average three support seeds; raw VLM and LoRA use the fixed support24 baseline.
+Raw VLM and LoRA use the original fixed support24 manifest.
 
 ## Efficiency
 

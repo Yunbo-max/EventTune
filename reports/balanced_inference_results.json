@@ -1,4 +1,6 @@
 {
+  "protocol": "legacy_support_cv_selected_lora",
+  "note": "Historical results: LoRA used support-only model selection; do not substitute these values for the clean fixed-8 main-table baseline.",
   "baseline": "raw_vlm_original_eval",
   "rows": [
     {

@@ -1,5 +1,11 @@
 # Balanced same-event inference adaptation results
 
+> **Legacy comparison protocol.** The LoRA adapters in this table use
+> per-event support-CV-selected training steps (8 or 32), not the later clean
+> fixed-8 protocol. For the current paper table, see
+> `fixed8_and_scaling_diagnostics.md` and
+> `rank16_full_diagonal_alpha_sweep.md`.
+
 Primary baseline: raw VLM `original_eval`; all adaptations use the same
 event's 24 support examples and evaluate the identical balanced query IDs.
 

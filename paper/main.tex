@@ -186,27 +186,13 @@ support cross-validation. Metrics are macro-F1, balanced accuracy, and NLL.
 \subsection{Fixed-configuration main comparison}
 Table~\ref{tab:fixed} uses one common rank-16, alpha-3, four-update KV
 configuration across events. Full improves the raw VLM on every event and has
-the best mean. It exceeds fixed-8 LoRA on Libya and Turkey; LoRA remains better
-on Hawaii and Noto. Diagonal is smaller but less accurate.
+the best mean F1, while LoRA has the best mean NLL. Full exceeds fixed-8 LoRA
+on Libya and Turkey; LoRA remains better on Hawaii and Noto. Diagonal uses only
+64 learned scalars but is less accurate. The table exposes the intended
+accuracy--adaptation-size trade-off rather than hiding metrics on which LoRA is
+better.
 
-\begin{table*}[t]
-\centering\small
-\caption{Macro-F1 under a fixed cross-event configuration. KV uses rank 16,
-layers 14+27, alpha 3, and four updates.}
-\label{tab:fixed}
-\begin{tabular}{lrrrr}
-\toprule
-Event & Raw VLM & LoRA fixed8 & Full KV & Diagonal KV\\
-\midrule
-Hawaii wildfire & 0.1992 & \textbf{0.3526} & 0.2957 & 0.2918\\
-Libya flood & 0.2585 & 0.2776 & \textbf{0.3739} & 0.2560\\
-Noto earthquake & 0.2087 & \textbf{0.3495} & 0.3112 & 0.2820\\
-Turkey earthquake & 0.2273 & 0.2147 & \textbf{0.3025} & 0.2879\\
-\midrule
-Mean & 0.2234 & 0.2986 & \textbf{0.3208} & 0.2799\\
-\bottomrule
-\end{tabular}
-\end{table*}
+\input{tables/main_table}
 
 \subsection{Rank-16 alpha sweep}
 We sweep alpha in $\{0.5,1,2,3,5,10\}$ for both controllers on all events
@@ -251,6 +237,33 @@ VLM improves macro-F1 by $+0.0457$ (95\% CI $[+0.0046,+0.0847]$,
 $p=0.0167$); Diagonal improves by $+0.0399$ (95\% CI
 $[+0.0063,+0.0734]$, $p=0.0061$). Full versus Diagonal is not significant
 ($p=0.7347$).
+
+Table~\ref{tab:significance} places both performance and mechanism tests in the
+main paper. Confidence intervals and permutation tests operate on paired event
+and query outcomes; the random-basis comparison additionally samples the random
+basis seed within each bootstrap replicate. All reported improvements over raw
+and all covariance-mechanism contrasts reject a zero mean difference at the
+5\% level, whereas Full and Diagonal are statistically indistinguishable.
+
+\begin{table*}[t]
+\centering\small
+\caption{Paired statistical validation (10,000 resamples). Positive $\Delta$
+favors the first method. Mechanism rows use the fixed seed-0 rank-5 controller;
+raw comparisons sample three support seeds.}
+\label{tab:significance}
+\begin{tabular}{lrrr}
+\toprule
+Comparison & Mean $\Delta$ Macro-F1 & 95\% bootstrap CI & Permutation $p$\\
+\midrule
+Full KV $-$ raw VLM & $+0.0457$ & $[+0.0046,+0.0847]$ & $0.0167$\\
+Diagonal KV $-$ raw VLM & $+0.0399$ & $[+0.0063,+0.0734]$ & $0.0061$\\
+Full KV $-$ Diagonal KV & $+0.0058$ & $[-0.0433,+0.0506]$ & $0.7347$\\
+Covariance $-$ mean gradient & $+0.0458$ & $[+0.0188,+0.0735]$ & $0.0142$\\
+Covariance $-$ centered covariance & $+0.0243$ & $[+0.0100,+0.0388]$ & $0.0032$\\
+Covariance $-$ random basis & $+0.0551$ & $[+0.0058,+0.1036]$ & $0.0022$\\
+\bottomrule
+\end{tabular}
+\end{table*}
 
 \subsection{Capacity, support sensitivity, and efficiency}
 Adapting every decoder layer with rank-16 Full matrices (14,336 scalars) is not
