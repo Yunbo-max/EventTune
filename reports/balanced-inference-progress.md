@@ -14,6 +14,12 @@ on all four events. See `extended_neurips_results.md`. Exact 300-query latency
 and memory measurements for pure VLM, LoRA, Full KV-TTT, and Diagonal KV-TTT
 are in `inference_efficiency_benchmark.md`.
 
+A controlled rank-16 Full/Diagonal alpha sweep is complete (48/48): six alpha
+values on both controller types across all four events. See
+`rank16_full_diagonal_alpha_sweep.md`. Per-event query-oracle means are 0.3504
+for Full and 0.3254 for Diagonal, versus 0.2986 for clean fixed-8 LoRA; these
+maxima are explicitly not treated as support-selected primary estimates.
+
 The NeurIPS-level supervised ablation expansion is 40/40 complete. It covers support budget 12/24/48,
 layers 14/27/14+27, ranks 5/8/16/32, and update steps 1/2/4/8 using raw VLM,
 same-event labeled support, full KV-TTT, and alpha 3. No run has failed or hit
