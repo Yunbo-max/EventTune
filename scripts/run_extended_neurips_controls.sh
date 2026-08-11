@@ -7,13 +7,14 @@ RUNS_ROOT="${RUNS_ROOT:-runs/neurips}"
 
 run_arm() {
   local event="$1" basis="$2" seed="$3" alpha="$4" name="$5"
+  local lr="${6:-0.05}"
   local split fold arm eval
   split="${PREP_ROOT}/${event}"; fold="${RUNS_ROOT}/${event}"
   arm="${fold}/${name}"; eval="${arm}/eval"; mkdir -p "${arm}"
   [[ -f "${arm}/kv_state.pt" ]] || "${PYTHON_BIN}" scripts/adapt_event_kv.py \
     --support-manifest "${split}/target_support.jsonl" --output-dir "${arm}" \
     --basis-mode "${basis}" --seed "${seed}" --rank 5 --alpha-max "${alpha}" \
-    --coefficient-mode full --steps 4 --learning-rate 0.05 --l2 1e-3 --layers 14 27
+    --coefficient-mode full --steps 4 --learning-rate "${lr}" --l2 1e-3 --layers 14 27
   [[ -f "${eval}/metrics.json" ]] || "${PYTHON_BIN}" scripts/evaluate.py \
     --manifest "${split}/target_query.jsonl" --no-lora --kv-state "${arm}/kv_state.pt" \
     --d4-views 1 --crop-size 448 --output-dir "${eval}"
@@ -29,4 +30,7 @@ for event in ${EVENTS}; do
   for alpha in 1 2 5 10; do
     run_arm "${event}" covariance 0 "${alpha}" "ablation_alpha${alpha}_full"
   done
+  run_arm "${event}" covariance 0 3.0 ablation_lr0p01_full_a3 0.01
+  run_arm "${event}" covariance 0 3.0 ablation_lr0p1_full_a3 0.1
+  run_arm "${event}" covariance 0 3.0 ablation_lr0p2_full_a3 0.2
 done
