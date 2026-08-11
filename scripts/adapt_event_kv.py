@@ -47,7 +47,7 @@ def main() -> None:
     parser.add_argument("--model-id", default=DEFAULT_MODEL)
     parser.add_argument("--rank", type=int, default=8)
     parser.add_argument(
-        "--basis-mode", choices=("covariance", "mean_gradient", "random"),
+        "--basis-mode", choices=("covariance", "centered_covariance", "mean_gradient", "random"),
         default="covariance", help="subspace construction control",
     )
     parser.add_argument("--layers", nargs="+", type=int, default=None)

@@ -344,7 +344,7 @@ def extract_kv_subspace(
     K/V gradients and accumulates the FP32 covariance ``C += G^T G``. Returns
     ``(bases, spectra)`` with bases the top-``rank`` eigenvectors of each
     covariance (same as the SVD right singular directions)."""
-    if basis_mode not in {"covariance", "mean_gradient", "random"}:
+    if basis_mode not in {"covariance", "centered_covariance", "mean_gradient", "random"}:
         raise ValueError(f"unknown basis_mode: {basis_mode}")
     if basis_mode == "mean_gradient" and rank != 1:
         raise ValueError("mean_gradient basis is intrinsically rank 1")
@@ -372,6 +372,7 @@ def extract_kv_subspace(
         key: torch.zeros(dim, dtype=torch.float32, device=device)
         for key, dim in dims.items()
     }
+    gradient_count = {key: 0 for key in dims}
     collector = KVGradientCollector(modules)
     samples = list(support)
     try:
@@ -385,6 +386,7 @@ def extract_kv_subspace(
                 gradient = gradient.float()
                 covariance[key].add_(gradient.t() @ gradient)
                 gradient_sum[key].add_(gradient.sum(dim=0))
+                gradient_count[key] += gradient.shape[0]
             collector.clear()
             model.zero_grad(set_to_none=True)
             del loss, batch
@@ -405,6 +407,13 @@ def extract_kv_subspace(
             bases[key] = (direction / norm).unsqueeze(1).contiguous().detach().cpu()
             spectra[str(key)] = [float(norm)]
             continue
+        if basis_mode == "centered_covariance":
+            count = gradient_count[key]
+            if count <= 0:
+                raise RuntimeError(f"no gradients collected for {key}")
+            covariance_matrix = covariance_matrix - torch.outer(
+                gradient_sum[key], gradient_sum[key]
+            ) / count
         eigenvalues, eigenvectors = torch.linalg.eigh(covariance_matrix.to(torch.float32))
         values, order = torch.sort(eigenvalues, descending=True)
         bases[key] = eigenvectors[:, order[:rank]].contiguous().detach().cpu()
