@@ -137,6 +137,39 @@ The common configuration uses four full-support updates, learning rate $0.05$,
 $\lambda=10^{-3}$, and unit gradient clipping. Each query then runs normally
 with the fixed controller; no query-time optimization is performed.
 
+\begin{algorithm}[t]
+\small
+\caption{Supervised event-level \KVTTT{}}
+\label{alg:kvttt}
+\begin{algorithmic}[1]
+\REQUIRE Frozen VLM $f_\theta$; support $\mathcal S$; layers $\mathcal L$;
+rank $r$; bound $\alpha$; updates $T_u$
+\FOR{$(x_i,y_i)\in\mathcal S$}
+  \STATE Build the paired-image prompt and isolate the answer-token span.
+  \STATE Backpropagate its loss; retain post-image gradients $G_i^{(l,t)}$.
+  \STATE $C^{(l,t)}\leftarrow C^{(l,t)}+(G_i^{(l,t)})^\top G_i^{(l,t)}$.
+\ENDFOR
+\FOR{$l\in\mathcal L$ and $t\in\{K,V\}$}
+  \STATE $B^{(l,t)}\leftarrow\operatorname{TopEig}_r(C^{(l,t)})$.
+  \STATE Initialize the Diagonal vector $a$ or Full matrix $R$ to zero.
+\ENDFOR
+\FOR{$u=1,\ldots,T_u$}
+  \STATE Accumulate the mean labeled loss over all $|\mathcal S|=24$ items.
+  \STATE Add $\lambda\lVert\phi\rVert_2^2$, clip gradients, and update $\phi$.
+\ENDFOR
+\RETURN Bases $B$ and controller coefficients $\phi$.
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Complexity.}
+For $L$ selected layers and both projection types, Diagonal learns $2Lr$
+scalars and Full learns $2Lr^2$. Basis extraction requires one frozen-model
+backward pass per support item and an eigendecomposition of each $d\times d$
+second-moment matrix. The controller adds two low-rank projections per selected
+module at inference but no extra tokens, retrieval, or optimization. Bases and
+coefficients are serialized together; their storage is dominated by $B$, not
+by the learned coefficient count.
+
 \section{Experiments}
 \subsection{Protocol}
 We use the four \textsc{BRIGHT} events for which the strict balanced protocol
@@ -257,6 +290,187 @@ beat raw inference across support seeds. The second-moment mechanism is more
 reliable than mean-gradient, centered, and random controls. Future evaluation
 must preselect alpha from support alone, repeat sensitive configurations, and
 extend the protocol beyond one backbone and four events.
+
+\appendices
+\section{Complete Fixed-Configuration Metrics}
+Table~\ref{tab:allmetrics} reports balanced accuracy (BA), NLL, and ordinal MAE
+in addition to the macro-F1 values in Table~\ref{tab:fixed}. A lower NLL and MAE
+is better. The results show that improvements in macro-F1 need not imply an
+ordinal-error improvement: for example, fixed-8 LoRA raises Hawaii F1 while
+increasing MAE. This is why we retain both classification and probabilistic
+metrics rather than selecting a method from F1 alone.
+
+\begin{table*}[t]
+\centering\scriptsize
+\caption{Complete metrics for the fixed rank-16, alpha-3 comparison.}
+\label{tab:allmetrics}
+\begin{tabular}{llrrrr}
+\toprule
+Event & Method & Macro-F1 & BA & NLL & Ordinal MAE\\
+\midrule
+Hawaii & Raw / LoRA / Full / Diag.
+& 0.1992 / 0.3526 / 0.2957 / 0.2918
+& 0.3433 / 0.3767 / 0.3533 / 0.3300
+& 1.2491 / 1.0974 / 1.1314 / 1.1235
+& 0.6767 / 0.8600 / 0.9467 / 0.7800\\
+Libya & Raw / LoRA / Full / Diag.
+& 0.2585 / 0.2776 / 0.3739 / 0.2560
+& 0.3633 / 0.3467 / 0.3800 / 0.3567
+& 1.3331 / 1.1175 / 1.1011 / 1.1525
+& 0.6633 / 0.9200 / 0.8167 / 0.6667\\
+Noto & Raw / LoRA / Full / Diag.
+& 0.2087 / 0.3495 / 0.3112 / 0.2820
+& 0.3333 / 0.3800 / 0.3400 / 0.3500
+& 1.2779 / 1.0977 / 1.1467 / 1.1405
+& 0.6867 / 0.8933 / 0.8767 / 0.6967\\
+Turkey & Raw / LoRA / Full / Diag.
+& 0.2273 / 0.2147 / 0.3025 / 0.2879
+& 0.3400 / 0.3233 / 0.3067 / 0.3400
+& 1.4333 / 1.1980 / 1.1676 / 1.2694
+& 0.7300 / 1.0233 / 0.9133 / 0.8733\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\section{Complete Rank-16 Alpha Sweep}
+Tables~\ref{tab:fullalpha} and~\ref{tab:diagalpha} contain all 48 runs behind
+the oracle summary. The non-monotonic response is important: increasing the
+residual bound does not consistently improve performance, and the best alpha
+differs by event and controller. Consequently, the maxima are used to diagnose
+capacity, not as the fixed primary estimator.
+
+\begin{table}[t]
+\centering\scriptsize
+\caption{Full rank-16 macro-F1 by alpha.}
+\label{tab:fullalpha}
+\begin{tabular}{lrrrrrr}
+\toprule
+Event & .5 & 1 & 2 & 3 & 5 & 10\\
+\midrule
+Hawaii & .2622 & .3338 & \textbf{.3869} & .2957 & .3239 & .3476\\
+Libya & .3249 & .2760 & \textbf{.3852} & .3739 & .3394 & .2943\\
+Noto & .2354 & \textbf{.3270} & .3095 & .3112 & .3021 & .2770\\
+Turkey & .2627 & .1876 & .2527 & \textbf{.3025} & .2472 & .2578\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering\scriptsize
+\caption{Diagonal rank-16 macro-F1 by alpha.}
+\label{tab:diagalpha}
+\begin{tabular}{lrrrrrr}
+\toprule
+Event & .5 & 1 & 2 & 3 & 5 & 10\\
+\midrule
+Hawaii & .2880 & .2972 & .3021 & .2918 & .3211 & \textbf{.3341}\\
+Libya & .3110 & .3033 & .3041 & .2560 & \textbf{.3390} & .3278\\
+Noto & .2629 & .2677 & .2278 & .2820 & \textbf{.3404} & .3310\\
+Turkey & .2637 & .2698 & .2604 & \textbf{.2879} & .2843 & .2601\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Supervised Ablations}
+Table~\ref{tab:ablations} averages four events for the compact Full controller
+at alpha 3 while changing one factor at a time. The layer result is especially
+clear: middle+last substantially outperforms either layer alone. Rank 16 is the
+best mean in the original rank sweep, while eight updates slightly outperform
+four. Support48 does not improve on support24, consistent with support quality
+and spatial coverage mattering more than count alone.
+
+\begin{table}[t]
+\centering\small
+\caption{Four-event mean macro-F1 for one-factor supervised ablations.}
+\label{tab:ablations}
+\begin{tabular}{llr}
+\toprule
+Factor & Setting & Mean F1\\
+\midrule
+Support & 12 / 24 / 48 & .2538 / \textbf{.2964} / .2754\\
+Layers & 14 / 27 / 14+27 & .1964 / .2213 / \textbf{.2964}\\
+Rank & 5 / 8 / 16 / 32 & .2964 / .2972 / \textbf{.3136} / .2930\\
+Updates & 1 / 2 / 4 / 8 & .2486 / .2219 / .2964 / \textbf{.3048}\\
+Learning rate & .01 / .05 / .1 / .2 & .2659 / \textbf{.2964} / .2513 / .2466\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Support-Seed Robustness}
+Table~\ref{tab:seedmeans} summarizes the three balanced support24 seeds used by
+the compact alpha-3 controller. Variation is substantial, particularly on Noto
+Full and Libya Diagonal, motivating paired resampling over both support and
+queries. The statistical comparisons reported in the main paper use 10,000
+stratified bootstrap and paired permutation replicates.
+
+\begin{table}[t]
+\centering\small
+\caption{Macro-F1 mean $\pm$ sample standard deviation over three support
+seeds.}
+\label{tab:seedmeans}
+\begin{tabular}{lrr}
+\toprule
+Event & Full & Diagonal\\
+\midrule
+Hawaii & $.2795\pm.0317$ & $.2883\pm.0344$\\
+Libya & $.3044\pm.0223$ & $.3111\pm.0530$\\
+Noto & $.2611\pm.0566$ & $.1982\pm.0116$\\
+Turkey & $.2317\pm.0498$ & $.2557\pm.0293$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Mechanism and Negative Controls}
+The mean-gradient control keeps only the normalized aggregate gradient and is
+therefore intrinsically rank one. Centered covariance subtracts the outer
+product of the token-level mean, while random controls use orthonormal Gaussian
+bases with three seeds. Their mean macro-F1 values are .2506, .2721, and .2414,
+respectively, versus .2964 for the uncentered second moment. Centering yields a
+similar NLL reduction (.1440 versus .1435) but lower F1, suggesting that both
+the gradient mean and directional variation contribute.
+
+The dense all-layer negative control changes 56 projections. With rank 16 it
+has 14,336 coefficient scalars, but the original alpha-3/lr-.05 settings cause
+loss spikes and yield event F1 values .2400, .1670, .1704, and .1935. On Hawaii,
+alpha .3/lr .005 restores monotonically decreasing support loss yet yields only
+.2923 query F1 and zero damaged recall. This rules out the simple explanation
+that more controlled layers or more coefficient parameters necessarily help.
+
+\section{Efficiency and Artifact Accounting}
+\begin{table}[t]
+\centering\small
+\caption{Exact Hawaii query300 efficiency on one RTX 3090.}
+\label{tab:efficiency}
+\begin{tabular}{lrrr}
+\toprule
+Method & sec/sample & Peak MiB & Trainable\\
+\midrule
+Raw VLM & 1.3405 & 17,470 & 0\\
+LoRA & 1.3725 & 17,508 & 10,092,544\\
+Full rank5 & 1.3382 & 17,470 & 100\\
+Diagonal rank5 & 1.3384 & 17,470 & 20\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The timing excludes adaptation and measures identical query inference. KV basis
+extraction averages about 17 seconds and coefficient fitting about 53 seconds.
+The compact state files are approximately 44 KiB because they contain the
+bases as well as coefficients; the LoRA adapter is approximately 39.5 MiB. Full
+rank-16 has 1,024 learned coefficient scalars and Diagonal rank-16 has 64, but
+their exact end-to-end timing was not substituted for the measured compact
+benchmark in Table~\ref{tab:efficiency}.
+
+\section{Reproducibility and Selection Caveats}
+All comparisons within a row use identical saved support and query manifests,
+model fingerprints, crop size, and query IDs. Completed predictions are
+configuration-bound and resumable. Nevertheless, two limitations affect
+interpretation. First, the current support sets are class-balanced but spatially
+concentrated (three Hawaii support tiles and four Noto support tiles). Second,
+two nominally matching Hawaii rank-16 Full alpha-3 runs differ by .0338 F1,
+despite matching recorded configuration. Independent repeats are therefore
+required for sensitive oracle peaks. Finally, no per-event alpha selected from
+the query sweep is presented as a test-independent primary result.
 
 \bibliographystyle{IEEEtran}
 \bibliography{refs}
