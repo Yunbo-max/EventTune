@@ -7,8 +7,11 @@ RUNS_ROOT="${RUNS_ROOT:-runs/neurips}"
 
 run_arm() {
   local event="$1" mode="$2" rank="$3" name="$4"
-  local split="${PREP_ROOT}/${event}" fold="${RUNS_ROOT}/${event}"
-  local arm="${fold}/${name}" eval="${arm}/eval"
+  local split fold arm eval
+  split="${PREP_ROOT}/${event}"
+  fold="${RUNS_ROOT}/${event}"
+  arm="${fold}/${name}"
+  eval="${arm}/eval"
   mkdir -p "${arm}"
   [[ -f "${arm}/kv_state.pt" ]] || "${PYTHON_BIN}" scripts/adapt_event_kv.py \
     --support-manifest "${split}/target_support.jsonl" --output-dir "${arm}" \
