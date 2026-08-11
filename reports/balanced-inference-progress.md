@@ -1,11 +1,18 @@
 # Balanced same-event inference progress
 
-Last updated: 2026-08-10 22:32 UTC.
+Last updated: 2026-08-11 UTC.
 
 Status: **complete**. All four uniform events, expanded supervised ablations,
 and multiseed robustness runs have finished. The publication-facing primary outputs are
 `balanced_inference_results.md` and `balanced_inference_results.json` in this
 directory.
+
+The extended mechanism and robustness suite is also complete: mean-gradient,
+centered-covariance, three-seed random-subspace controls, alpha
+0.5/1/2/3/5/10, and coefficient learning rates 0.01/0.05/0.1/0.2 were all run
+on all four events. See `extended_neurips_results.md`. Exact 300-query latency
+and memory measurements for pure VLM, LoRA, Full KV-TTT, and Diagonal KV-TTT
+are in `inference_efficiency_benchmark.md`.
 
 The NeurIPS-level supervised ablation expansion is 40/40 complete. It covers support budget 12/24/48,
 layers 14/27/14+27, ranks 5/8/16/32, and update steps 1/2/4/8 using raw VLM,
