@@ -335,6 +335,8 @@ def extract_kv_subspace(
     rank: int = 8,
     crop_size: int = 448,
     progress: bool = True,
+    basis_mode: str = "covariance",
+    basis_seed: int = 0,
 ) -> tuple[dict[tuple[int, str], torch.Tensor], dict[str, list[float]]]:
     """Correctness-gradient KV subspace extraction over the support set.
 
@@ -342,6 +344,10 @@ def extract_kv_subspace(
     K/V gradients and accumulates the FP32 covariance ``C += G^T G``. Returns
     ``(bases, spectra)`` with bases the top-``rank`` eigenvectors of each
     covariance (same as the SVD right singular directions)."""
+    if basis_mode not in {"covariance", "mean_gradient", "random"}:
+        raise ValueError(f"unknown basis_mode: {basis_mode}")
+    if basis_mode == "mean_gradient" and rank != 1:
+        raise ValueError("mean_gradient basis is intrinsically rank 1")
     freeze_model(model)
     model.eval()
     if hasattr(model, "gradient_checkpointing_disable"):
@@ -351,8 +357,19 @@ def extract_kv_subspace(
 
     device = next(model.parameters()).device
     dims = {(layer_id, kind): module.out_features for layer_id, kind, module in modules}
+    if basis_mode == "random":
+        generator = torch.Generator(device="cpu").manual_seed(basis_seed)
+        bases = {}
+        for key, dim in dims.items():
+            basis, _ = torch.linalg.qr(torch.randn(dim, rank, generator=generator))
+            bases[key] = basis[:, :rank].contiguous()
+        return bases, {str(key): [] for key in dims}
     covariance = {
         key: torch.zeros(dim, dim, dtype=torch.float32, device=device)
+        for key, dim in dims.items()
+    }
+    gradient_sum = {
+        key: torch.zeros(dim, dtype=torch.float32, device=device)
         for key, dim in dims.items()
     }
     collector = KVGradientCollector(modules)
@@ -367,6 +384,7 @@ def extract_kv_subspace(
             for key, gradient in gradients.items():
                 gradient = gradient.float()
                 covariance[key].add_(gradient.t() @ gradient)
+                gradient_sum[key].add_(gradient.sum(dim=0))
             collector.clear()
             model.zero_grad(set_to_none=True)
             del loss, batch
@@ -379,6 +397,14 @@ def extract_kv_subspace(
     bases: dict[tuple[int, str], torch.Tensor] = {}
     spectra: dict[str, list[float]] = {}
     for key, covariance_matrix in covariance.items():
+        if basis_mode == "mean_gradient":
+            direction = gradient_sum[key]
+            norm = torch.linalg.vector_norm(direction)
+            if norm <= 0:
+                raise RuntimeError(f"zero mean gradient for {key}")
+            bases[key] = (direction / norm).unsqueeze(1).contiguous().detach().cpu()
+            spectra[str(key)] = [float(norm)]
+            continue
         eigenvalues, eigenvectors = torch.linalg.eigh(covariance_matrix.to(torch.float32))
         values, order = torch.sort(eigenvalues, descending=True)
         bases[key] = eigenvectors[:, order[:rank]].contiguous().detach().cpu()

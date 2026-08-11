@@ -78,6 +78,16 @@ def test_covariance_eigvecs_match_svd_right_singulars():
     assert torch.all(agreement > 0.99)
 
 
+def test_random_basis_is_orthonormal_and_seeded():
+    torch.manual_seed(0)
+    generator = torch.Generator(device="cpu").manual_seed(7)
+    first, _ = torch.linalg.qr(torch.randn(24, 5, generator=generator))
+    generator = torch.Generator(device="cpu").manual_seed(7)
+    second, _ = torch.linalg.qr(torch.randn(24, 5, generator=generator))
+    assert torch.allclose(first, second)
+    assert torch.allclose(first.T @ first, torch.eye(5), atol=1e-5)
+
+
 def test_controller_zero_coefficients_is_identity():
     torch.manual_seed(1)
     dim, rank = 16, 4

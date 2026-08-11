@@ -46,6 +46,10 @@ def main() -> None:
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--model-id", default=DEFAULT_MODEL)
     parser.add_argument("--rank", type=int, default=8)
+    parser.add_argument(
+        "--basis-mode", choices=("covariance", "mean_gradient", "random"),
+        default="covariance", help="subspace construction control",
+    )
     parser.add_argument("--layers", nargs="+", type=int, default=None)
     parser.add_argument("--alpha-max", type=float, default=0.5)
     parser.add_argument(
@@ -114,6 +118,8 @@ def main() -> None:
         build_post_mask,
         rank=args.rank,
         crop_size=args.crop_size,
+        basis_mode=args.basis_mode,
+        basis_seed=args.seed,
     )
     extraction_seconds = time.time() - t0
 
@@ -122,6 +128,7 @@ def main() -> None:
         {
             "bases": bases,
             "rank": args.rank,
+            "basis_mode": args.basis_mode,
             "alpha_max": args.alpha_max,
             "coefficient_mode": args.coefficient_mode,
         },
