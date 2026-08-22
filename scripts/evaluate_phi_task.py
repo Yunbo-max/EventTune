@@ -9,7 +9,9 @@ from eventttt.metrics import classification_metrics_nclass
 from eventttt.task_phi import load_phi, score_task_sample
 
 def main():
- p=argparse.ArgumentParser(); p.add_argument('--manifest',required=True); p.add_argument('--output-dir',required=True); p.add_argument('--model-id',required=True); p.add_argument('--limit',type=int,default=None); a=p.parse_args()
+ p=argparse.ArgumentParser(); p.add_argument('--manifest',required=True); p.add_argument('--output-dir',required=True); p.add_argument('--model-id',required=True); p.add_argument('--limit',type=int,default=None); p.add_argument('--seed',type=int,default=1729); a=p.parse_args()
+ np.random.seed(a.seed); torch.manual_seed(a.seed)
+ if torch.cuda.is_available(): torch.cuda.manual_seed_all(a.seed)
  samples=read_task_samples(a.manifest); samples=samples[:a.limit] if a.limit else samples
  model,processor=load_phi(a.model_id); device=next(model.parameters()).device
  rows=[score_task_sample(model,processor,s,device) for s in tqdm(samples,desc='Phi scoring',dynamic_ncols=True)]
