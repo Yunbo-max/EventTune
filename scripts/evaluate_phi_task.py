@@ -10,11 +10,11 @@ from eventttt.task_phi import load_phi, score_task_sample
 from eventttt.phi_kv import PhiKVController, discover_phi_kv, phi_visual_mask
 
 def main():
- p=argparse.ArgumentParser(); p.add_argument('--manifest',required=True); p.add_argument('--output-dir',required=True); p.add_argument('--model-id',required=True); p.add_argument('--limit',type=int,default=None); p.add_argument('--seed',type=int,default=1729); p.add_argument('--kv-state',default=''); a=p.parse_args()
+ p=argparse.ArgumentParser(); p.add_argument('--manifest',required=True); p.add_argument('--output-dir',required=True); p.add_argument('--model-id',required=True); p.add_argument('--limit',type=int,default=None); p.add_argument('--seed',type=int,default=1729); p.add_argument('--kv-state',default=''); p.add_argument('--adapter',default=''); a=p.parse_args()
  np.random.seed(a.seed); torch.manual_seed(a.seed)
  if torch.cuda.is_available(): torch.cuda.manual_seed_all(a.seed)
  samples=read_task_samples(a.manifest); samples=samples[:a.limit] if a.limit else samples
- model,processor=load_phi(a.model_id); device=next(model.parameters()).device; controller=None
+ model,processor=load_phi(a.model_id,source_adapter=a.adapter or None); device=next(model.parameters()).device; controller=None
  if a.kv_state:
   payload=torch.load(a.kv_state,map_location=device); modules,count=discover_phi_kv(model); selected=set(payload['layers']); modules=[x for x in modules if x[0] in selected]
   bases={tuple((int(k.split(':')[0]),k.split(':')[1])):v for k,v in payload['bases'].items()}; controller=PhiKVController(modules,bases,payload['rank'],payload.get('alpha_max',3),'full',device)

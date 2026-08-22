@@ -12,8 +12,8 @@ generalization experiment.
 - Qwen single-image candidate-likelihood backend passes Camelyon binary and
   ManipBench four-option GPU smoke tests on RTX 3090.
 - Phi-3.5-Vision numbered-image-tag candidate scorer passes a two-example
-  Camelyon GPU smoke (eager attention fallback is pinned because flash-attn is
-  not installed).
+  Camelyon GPU smoke. The initial smoke used eager attention; the completed Phi
+  adaptation diagnostics use the remote model's bundled SDPA path consistently.
 - Qwen seed-0 Camelyon17 Hospital 2 query300, fixed support16:
 
 | Arm | Macro-F1 | Balanced accuracy | NLL |
@@ -76,19 +76,36 @@ Phi-3.5-Vision gate results (seed 0, frozen candidate scorer) are recorded
 separately. Camelyon balanced accuracy is 0.5033 (below the registered 0.52
 binary gate) and ManipBench bridge is 0.2850 (barely above the multiclass
 chance+0.02 gate). The Phi Camelyon collapse is retained; no query-informed
-fallback or tuning is applied. The adapter currently fails closed on Phi's
-fused `qkv_proj` layout rather than pretending it has independent K/V modules;
-the Qwen backbone remains the primary Gradient-Cov KV result.
+fallback or tuning is applied. The initial adapter correctly failed closed on
+Phi's fused `qkv_proj` layout rather than pretending it had independent K/V
+modules; the debugged implementation now adapts the fused K/V slices under the
+consistent SDPA path. The Qwen backbone remains the primary Gradient-Cov KV
+result.
 
-An explicit Phi fused-qkv Gradient-Cov prototype was debugged but its support
-backward exceeds the 24-GiB RTX 3090 budget even with checkpointing. No Phi
-adapted number is reported from that failed run; this is preserved as a
-resource failure rather than silently changing image resolution or precision.
+The first Phi fused-qkv backward attempt exceeded the 24-GiB RTX 3090 budget
+under eager attention. Debugging switched to the remote model's bundled SDPA
+attention implementation (weights and prompts unchanged); a one-sample
+backward and the full 32-example support pass then completed. The original
+OOM is retained in the audit trail, and no eager/SDPA runs are mixed in one
+comparison.
 
 The remaining Phi Frozen gates are also recorded: droid-pick-place balanced
 accuracy 0.2550 and droid-arti 0.2375, both below the multiclass 0.27 gate.
 Thus Phi expansion is stopped for all domains except the diagnostic bridge
 Frozen row; Qwen is the registered primary backbone for the full matrix.
+
+Under the consistent SDPA attention path, the Phi bridge seed-0 diagnostic
+matrix is:
+
+| Arm | Macro-F1 | Balanced accuracy | NLL |
+|---|---:|---:|---:|
+| Frozen | 0.1833 | 0.2850 | 1.8548 |
+| LoRA-TTA | **0.5277** | **0.5275** | 4.0960 |
+| Random-KV | 0.1895 | 0.2900 | 1.8287 |
+| Gradient-Cov KV | 0.2593 | 0.3150 | 1.5750 |
+
+Phi droid gates fail (0.2550 and 0.2375), and Camelyon fails the binary gate;
+therefore the preregistered stop rule prevents a Phi multi-seed expansion.
 
 ManipBench seed-2 adaptation results are now complete:
 
@@ -107,11 +124,12 @@ ManipBench seed-2 adaptation results are now complete:
 | droid-arti / Random-KV | 0.1250 | 0.2550 | 1.9344 |
 | droid-arti / Hidden Residual | 0.3078 | 0.3650 | 1.5880 |
 
-The artifact audit currently checks 51 Qwen prediction directories: all 51
-pass count, fixed-query ID/order, candidate-label, probability-sum, manifest
-hash, model fingerprint, and environment metadata checks. The six-hour batch
-budget and separate 30-minute debug allowance are recorded in the YAML
-protocol and execution contract.
+An earlier audit checkpoint covered 51 Qwen prediction directories. The final
+audit covers 67 Qwen prediction directories and all pass count, fixed-query
+ID/order, candidate-label, probability-sum, manifest hash, model fingerprint,
+and environment metadata checks. The six-hour batch budget and separate
+30-minute debug allowance are recorded in the YAML protocol and execution
+contract.
 
 The completed ManipBench three-seed paired summaries are now in
 `reports/manipbench_*_multiseed.json` (all query IDs identical):
