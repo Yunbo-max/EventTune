@@ -71,6 +71,14 @@ summaries are in `reports/camelyon_*_multiseed.json`:
 | Gradient-Cov KV | **0.6781** | **0.6822** | **0.5895** |
 | Hidden Residual | 0.4696 | 0.5500 | 0.6902 |
 
+Phi-3.5-Vision gate results (seed 0, frozen candidate scorer) are recorded
+separately. Camelyon balanced accuracy is 0.5033 (below the registered 0.52
+binary gate) and ManipBench bridge is 0.2850 (barely above the multiclass
+chance+0.02 gate). The Phi Camelyon collapse is retained; no query-informed
+fallback or tuning is applied. The adapter currently fails closed on Phi's
+fused `qkv_proj` layout rather than pretending it has independent K/V modules;
+the Qwen backbone remains the primary Gradient-Cov KV result.
+
 ManipBench seed-2 adaptation results are now complete:
 
 | Domain / arm | Macro-F1 | Balanced accuracy | NLL |
