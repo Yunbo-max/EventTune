@@ -51,14 +51,15 @@ KV uses rank 16, full coefficients, alpha 3, and four coefficient steps.
 The droid-arti frozen gate is below the pre-registered chance+0.02 threshold
 (0.27); it is retained and explicitly reported rather than silently dropped.
 The bridge hidden-residual arm and all three Gradient-Cov KV arms are now
-executed. Random-KV is recorded for bridge and the seed-2 domains below;
-ManipBench seed-1 learned-arm reruns and the Phi formal matrix remain.
+executed. Random-KV is recorded for all Qwen ManipBench domains and seeds;
+the Phi matrix is gate-limited as documented above.
 
 The fixed-seed Frozen rerun for ManipBench support seed 1 is complete:
 bridge/droid-pick-place/droid-arti balanced accuracies are 0.3200/0.2725/0.2675
 (macro-F1 0.2333/0.1553/0.1483). Query IDs and image paths are identical to
 seed 0, and a 20-example deterministic check produced identical probabilities
-across seeds.
+across seeds. The deterministic learned-arm reruns for seed 1 are also
+complete for all three domains and included in the paired summaries below.
 
 Camelyon17 Hospital 2 is now complete for support seeds 0/1/2. The paired
 summaries are in `reports/camelyon_*_multiseed.json`:
