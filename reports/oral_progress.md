@@ -79,6 +79,11 @@ fallback or tuning is applied. The adapter currently fails closed on Phi's
 fused `qkv_proj` layout rather than pretending it has independent K/V modules;
 the Qwen backbone remains the primary Gradient-Cov KV result.
 
+An explicit Phi fused-qkv Gradient-Cov prototype was debugged but its support
+backward exceeds the 24-GiB RTX 3090 budget even with checkpointing. No Phi
+adapted number is reported from that failed run; this is preserved as a
+resource failure rather than silently changing image resolution or precision.
+
 ManipBench seed-2 adaptation results are now complete:
 
 | Domain / arm | Macro-F1 | Balanced accuracy | NLL |

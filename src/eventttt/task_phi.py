@@ -45,21 +45,32 @@ def _batch(processor, sample, image, label):
     if start<0: raise ValueError('Phi answer tokens not found')
     return batch,(start,start+len(ids))
 
-def candidate_scores(model, processor, sample, device=None):
+def labeled_batch(processor, sample, image=None):
+    batch, (start, end) = _batch(processor, sample, image, sample.label)
+    labels = torch.full_like(batch['input_ids'], -100)
+    labels[0, start:end] = batch['input_ids'][0, start:end]
+    batch['labels'] = labels
+    return batch, (start, end)
+
+def candidate_scores(model, processor, sample, device=None, controller=None, visual_mask=None):
     device=device or next(model.parameters()).device; scores=[]; model.eval()
     with torch.inference_mode():
         image=load_task_image(sample)
         for label in sample.candidate_labels:
             batch,(start,end)=_batch(processor,sample,image,label)
             batch={k:v.to(device) for k,v in batch.items()}
+            if controller is not None:
+                controller.set_mask(visual_mask(batch['input_ids']))
             logits=model(**batch).logits.float()[0]
+            if controller is not None:
+                controller.clear_mask()
             targets=batch['input_ids'][0,start:end]
             lp=torch.log_softmax(logits[start-1:end-1],dim=-1)
             scores.append(float(lp.gather(-1,targets[:,None]).sum()))
     return np.asarray(scores,dtype=np.float64)
 
-def score_task_sample(model, processor, sample, device=None):
-    scores=candidate_scores(model,processor,sample,device)
+def score_task_sample(model, processor, sample, device=None, controller=None, visual_mask=None):
+    scores=candidate_scores(model,processor,sample,device,controller,visual_mask)
     probs=product_of_experts([scores.tolist()]); pred=int(np.argmax(probs))
     return {'sample_id':sample.sample_id,'domain_id':sample.domain_id,'group_id':sample.group_id,
             'label':sample.label,'label_id':sample.label_id,'prediction':sample.candidate_labels[pred],
