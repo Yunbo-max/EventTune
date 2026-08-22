@@ -84,6 +84,11 @@ backward exceeds the 24-GiB RTX 3090 budget even with checkpointing. No Phi
 adapted number is reported from that failed run; this is preserved as a
 resource failure rather than silently changing image resolution or precision.
 
+The remaining Phi Frozen gates are also recorded: droid-pick-place balanced
+accuracy 0.2550 and droid-arti 0.2375, both below the multiclass 0.27 gate.
+Thus Phi expansion is stopped for all domains except the diagnostic bridge
+Frozen row; Qwen is the registered primary backbone for the full matrix.
+
 ManipBench seed-2 adaptation results are now complete:
 
 | Domain / arm | Macro-F1 | Balanced accuracy | NLL |
