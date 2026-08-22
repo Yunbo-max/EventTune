@@ -69,7 +69,9 @@ def extract_task_subspace(model, processor, samples: Sequence[TaskSample], modul
             disable()
     bases, spectra = {}, {}
     for key, matrix in covariance.items():
-        values, vectors = torch.linalg.eigh(matrix)
+        # CPU eigendecomposition is slower but avoids intermittent cuSolver
+        # handle failures after long mixed-precision evaluation batches.
+        values, vectors = torch.linalg.eigh(matrix.detach().cpu())
         values, order = torch.sort(values, descending=True)
         bases[key] = vectors[:, order[:rank]].detach().cpu().contiguous()
         spectra[str(key)] = [float(value) for value in values[: rank * 3]]

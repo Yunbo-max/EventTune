@@ -142,7 +142,7 @@ def extract_hidden_subspace(model, processor, samples: Sequence[TaskSample], mod
             disable()
     bases, spectra = {}, {}
     for layer, matrix in covariance.items():
-        values, vectors = torch.linalg.eigh(matrix)
+        values, vectors = torch.linalg.eigh(matrix.detach().cpu())
         values, order = torch.sort(values, descending=True)
         bases[layer] = vectors[:, order[:rank]].detach().cpu().contiguous()
         spectra[str(layer)] = [float(v) for v in values[:rank * 3]]

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import math
 from typing import Iterable, Sequence
 import warnings
+import os
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -17,7 +19,11 @@ from .schemas import DAMAGE_LABELS, Sample
 from .vision import crop_pair, d4_pair, load_image
 
 
-DEFAULT_MODEL = "Qwen/Qwen2.5-VL-7B-Instruct"
+_LOCAL_DEFAULT_MODEL = Path("artifacts/models/Qwen2.5-VL-7B-Instruct")
+DEFAULT_MODEL = os.environ.get(
+    "EVENTTUNE_QWEN_MODEL",
+    str(_LOCAL_DEFAULT_MODEL) if _LOCAL_DEFAULT_MODEL.is_dir() else "Qwen/Qwen2.5-VL-7B-Instruct",
+)
 
 
 def _require_training_packages():

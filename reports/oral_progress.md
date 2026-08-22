@@ -101,3 +101,28 @@ pass count, fixed-query ID/order, candidate-label, probability-sum, manifest
 hash, model fingerprint, and environment metadata checks. The six-hour batch
 budget and separate 30-minute debug allowance are recorded in the YAML
 protocol and execution contract.
+
+The completed ManipBench three-seed paired summaries are now in
+`reports/manipbench_*_multiseed.json` (all query IDs identical):
+
+| Domain / arm | Mean macro-F1 | Mean balanced accuracy | Mean NLL |
+|---|---:|---:|---:|
+| bridge / Frozen | 0.2333 | 0.3200 | 1.6544 |
+| bridge / LoRA-TTA | **0.7740** | **0.7750** | 2.8392 |
+| bridge / Gradient-Cov KV | 0.4260 | 0.4392 | 1.2139 |
+| bridge / Random-KV | 0.2258 | 0.3167 | 1.5675 |
+| bridge / Hidden Residual | 0.3449 | 0.3942 | 1.3322 |
+| droid-pick-place / Frozen | 0.1553 | 0.2725 | 1.8899 |
+| droid-pick-place / LoRA-TTA | **0.7137** | **0.7150** | 2.3416 |
+| droid-pick-place / Gradient-Cov KV | 0.2876 | 0.3450 | 1.3944 |
+| droid-pick-place / Random-KV | 0.1966 | 0.2992 | 1.7225 |
+| droid-pick-place / Hidden Residual | 0.2497 | 0.3258 | 1.5725 |
+| droid-arti / Frozen | 0.1483 | 0.2675 | 1.9609 |
+| droid-arti / LoRA-TTA | **0.7536** | **0.7550** | 2.4298 |
+| droid-arti / Gradient-Cov KV | 0.2497 | 0.2992 | 1.4584 |
+| droid-arti / Random-KV | 0.1567 | 0.2683 | 1.8356 |
+| droid-arti / Hidden Residual | 0.2793 | 0.3317 | 1.5757 |
+
+The audit count is now 67 Qwen prediction directories (all passed); the
+earlier count of 51 was before the deterministic seed-1 and missing seed-0
+control arms were filled.
