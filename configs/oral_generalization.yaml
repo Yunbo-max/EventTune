@@ -1,4 +1,8 @@
 protocol_version: 1
+data_protocol:
+  query_seed: 1729
+  query_policy: fixed_across_support_seeds
+  support_seed_policy: support_only
 primary_configuration:
   rank: 16
   alpha_max: 3.0

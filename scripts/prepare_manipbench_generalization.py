@@ -36,8 +36,11 @@ def main() -> None:
     parser.add_argument("--support-per-class", type=int, default=8)
     parser.add_argument("--query-target", type=int, default=400)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--query-seed", type=int, default=1729,
+        help="Fixed seed for the shared query set; --seed changes support only.",
+    )
     args = parser.parse_args()
-    rng = random.Random(args.seed)
 
     for domain in args.domains:
         grouped = defaultdict(list)
@@ -50,21 +53,30 @@ def main() -> None:
                 "sample_id": f"{domain}-{folder.name}", "domain_id": domain,
                 "group_id": folder.name, "image": str(required[2].resolve()),
                 "label": answer, "label_id": OPTIONS.index(answer),
+                "candidate_labels": list(OPTIONS),
                 "question": required[0].read_text(encoding="utf-8", errors="replace").strip(),
                 "dataset": "manipbench-q1", "metadata": {"source_folder": str(folder.resolve())},
             })
         if set(grouped) != set(OPTIONS):
             raise RuntimeError(f"{domain}: expected A/B/C/D, found {sorted(grouped)}")
-        support, pool = [], []
+        support, query = [], []
+        query_rng = random.Random(args.query_seed)
+        support_rng = random.Random(args.seed)
         for option in OPTIONS:
-            rng.shuffle(grouped[option])
-            support.extend(grouped[option][: args.support_per_class])
-            pool.extend(grouped[option][args.support_per_class :])
-        per_class = min(args.query_target // 4, *(len(grouped[x]) - args.support_per_class for x in OPTIONS))
-        query = []
-        for option in OPTIONS:
-            query.extend([r for r in pool if r["label"] == option][:per_class])
-        rng.shuffle(support); rng.shuffle(query)
+            rows = list(grouped[option])
+            query_rng.shuffle(rows)
+            per_class = args.query_target // len(OPTIONS)
+            if len(rows) < per_class + args.support_per_class:
+                raise RuntimeError(
+                    f"{domain}/{option}: need {per_class + args.support_per_class} rows, "
+                    f"found {len(rows)}"
+                )
+            query.extend(rows[:per_class])
+            support_pool = rows[per_class:]
+            support_rng.shuffle(support_pool)
+            support.extend(support_pool[: args.support_per_class])
+        support_rng.shuffle(support)
+        query_rng.shuffle(query)
         output = Path(args.output_dir) / domain / f"seed_{args.seed}"
         write_jsonl(output / "support.jsonl", support)
         write_jsonl(output / "query.jsonl", query)

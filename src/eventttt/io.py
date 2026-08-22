@@ -7,7 +7,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Iterable, Iterator, Sequence
 
-from .schemas import Sample
+from .schemas import Sample, TaskSample
 
 
 def sha256_file(path: str | Path) -> str:
@@ -134,6 +134,14 @@ def iter_jsonl(path: str | Path) -> Iterator[dict]:
 def read_samples(path: str | Path, resolve: bool = True) -> list[Sample]:
     manifest = Path(path).resolve()
     samples = [Sample.from_dict(row) for row in iter_jsonl(manifest)]
+    if resolve:
+        samples = [sample.resolve_paths(manifest.parent) for sample in samples]
+    return samples
+
+
+def read_task_samples(path: str | Path, resolve: bool = True) -> list[TaskSample]:
+    manifest = Path(path).resolve()
+    samples = [TaskSample.from_dict(row) for row in iter_jsonl(manifest)]
     if resolve:
         samples = [sample.resolve_paths(manifest.parent) for sample in samples]
     return samples

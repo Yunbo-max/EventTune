@@ -65,3 +65,53 @@ class Sample:
         values["post_image"] = resolve(self.post_image)
         values["mask_path"] = resolve(self.mask_path)
         return Sample.from_dict(values)
+
+
+@dataclass(frozen=True)
+class TaskSample:
+    """Normalized single-image, candidate-label example for cross-task runs."""
+
+    sample_id: str
+    domain_id: str
+    group_id: str
+    image: str
+    label: str
+    label_id: int
+    question: str
+    dataset: str
+    candidate_labels: tuple[str, ...]
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.candidate_labels:
+            raise ValueError("candidate_labels must be non-empty")
+        if self.label not in self.candidate_labels:
+            raise ValueError(f"label {self.label!r} is not in candidate_labels")
+        if self.label_id != self.candidate_labels.index(self.label):
+            raise ValueError("label_id disagrees with label/candidate_labels")
+
+    @classmethod
+    def from_dict(cls, row: dict[str, Any]) -> "TaskSample":
+        values = dict(row)
+        values.setdefault("metadata", {})
+        if "candidate_labels" not in values:
+            if values.get("dataset") == "camelyon17-wilds":
+                values["candidate_labels"] = ["normal", "tumor"]
+            elif values.get("dataset") == "manipbench-q1":
+                values["candidate_labels"] = ["A", "B", "C", "D"]
+            else:
+                raise ValueError("candidate_labels is required for unknown task dataset")
+        values["candidate_labels"] = tuple(values["candidate_labels"])
+        return cls(**values)
+
+    def to_dict(self) -> dict[str, Any]:
+        row = asdict(self)
+        row["candidate_labels"] = list(self.candidate_labels)
+        return row
+
+    def resolve_paths(self, base_dir: str | Path) -> "TaskSample":
+        path = Path(self.image)
+        image = str(path if path.is_absolute() else (Path(base_dir) / path).resolve())
+        values = self.to_dict()
+        values["image"] = image
+        return TaskSample.from_dict(values)

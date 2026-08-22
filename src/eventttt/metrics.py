@@ -36,33 +36,47 @@ def classification_metrics(
     probs = np.asarray(probabilities, dtype=np.float64)
     if probs.shape != (len(truth), len(DAMAGE_LABELS)):
         raise ValueError(f"Expected probabilities shape {(len(truth), len(DAMAGE_LABELS))}, got {probs.shape}")
+    return classification_metrics_nclass(truth, probs, tuple(DAMAGE_LABELS), ece_bins)
+
+
+def classification_metrics_nclass(
+    y_true: Iterable[int], probabilities: np.ndarray,
+    labels: tuple[str, ...], ece_bins: int = 10,
+) -> dict:
+    """Classification metrics for arbitrary candidate-label tasks."""
+    truth = np.asarray(list(y_true), dtype=np.int64)
+    probs = np.asarray(probabilities, dtype=np.float64)
+    n_classes = len(labels)
+    if probs.shape != (len(truth), n_classes):
+        raise ValueError(f"Expected probabilities shape {(len(truth), n_classes)}, got {probs.shape}")
     probs = np.clip(probs, 1e-12, 1.0)
     probs /= probs.sum(axis=1, keepdims=True)
     pred = probs.argmax(axis=1)
     precision, recall, f1, support = precision_recall_fscore_support(
-        truth, pred, labels=range(len(DAMAGE_LABELS)), zero_division=0
+        truth, pred, labels=range(n_classes), zero_division=0
     )
-    one_hot = np.eye(len(DAMAGE_LABELS))[truth]
-    return {
+    one_hot = np.eye(n_classes)[truth]
+    result = {
         "count": int(len(truth)),
-        "macro_f1": float(f1_score(truth, pred, average="macro", labels=range(3), zero_division=0)),
+        "macro_f1": float(f1_score(truth, pred, average="macro", labels=range(n_classes), zero_division=0)),
         "balanced_accuracy": float(balanced_accuracy_score(truth, pred)),
         "ordinal_mae": float(np.abs(truth - pred).mean()),
         "quadratic_weighted_kappa": float(cohen_kappa_score(truth, pred, weights="quadratic")),
-        "nll": float(log_loss(truth, probs, labels=range(3))),
+        "nll": float(log_loss(truth, probs, labels=range(n_classes))),
         "brier": float(np.square(probs - one_hot).sum(axis=1).mean()),
         "ece": expected_calibration_error(truth, probs, bins=ece_bins),
         "per_class": {
-            label: {
+            labels[index]: {
                 "precision": float(precision[index]),
                 "recall": float(recall[index]),
                 "f1": float(f1[index]),
                 "support": int(support[index]),
             }
-            for index, label in enumerate(DAMAGE_LABELS)
+            for index, label in enumerate(labels)
         },
-        "confusion_matrix": confusion_matrix(truth, pred, labels=range(3)).tolist(),
+        "confusion_matrix": confusion_matrix(truth, pred, labels=range(n_classes)).tolist(),
     }
+    return result
 
 
 def metrics_by_event(rows: Iterable[dict], ece_bins: int = 10) -> dict:

@@ -34,6 +34,8 @@ support-only tuning.
 ## Immutable experimental rules
 
 1. Support and query IDs are written before any model evaluation.
+   Within a domain, query IDs are fixed with query seed 1729; support seeds
+   0/1/2 change support only. This is required for paired query-level tests.
 2. Query labels may be read only by the final metric process. Adaptation,
    checkpoint choice, hyperparameter choice, and admission gates cannot access
    them.

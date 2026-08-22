@@ -29,6 +29,10 @@ def main() -> None:
     parser.add_argument("--support-per-class", type=int, default=8)
     parser.add_argument("--query-per-class", type=int, default=150)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--query-seed", type=int, default=1729,
+        help="Fixed seed for the shared query set; --seed changes support only.",
+    )
     args = parser.parse_args()
 
     from datasets import load_dataset
@@ -40,7 +44,9 @@ def main() -> None:
     by_label: dict[int, list[dict]] = defaultdict(list)
     required = args.support_per_class + args.query_per_class
     # Deterministic reservoir sampling limits dependence on remote row ordering.
-    rng = random.Random(args.seed)
+    # Reservoir and query sampling are deliberately independent of the support
+    # seed. This gives all support replicates identical query IDs.
+    reservoir_rng = random.Random(args.query_seed)
     seen = defaultdict(int)
     reservoir_size = max(required * 8, 2048)
     for row in stream:
@@ -57,7 +63,7 @@ def main() -> None:
         if len(bucket) < reservoir_size:
             bucket.append(candidate)
         else:
-            index = rng.randrange(seen[label])
+            index = reservoir_rng.randrange(seen[label])
             if index < reservoir_size:
                 bucket[index] = candidate
         if all(seen[k] >= reservoir_size * 4 for k in (0, 1)):
@@ -72,31 +78,48 @@ def main() -> None:
     for label_id, rows in selected_by_label.items():
         for row in rows:
             grouped[(row["patient"], row["slide"])][label_id].append(row)
-    group_keys = list(grouped)
-    rng.shuffle(group_keys)
+    # Freeze a balanced query first. Any patient/slide contributing a query row
+    # is excluded from every support seed.
+    query_rng = random.Random(args.query_seed)
+    query_group_keys = list(grouped)
+    query_rng.shuffle(query_group_keys)
+    query_by_label = {0: [], 1: []}
+    query_groups = set()
+    for group in query_group_keys:
+        if all(len(query_by_label[k]) >= args.query_per_class for k in (0, 1)):
+            break
+        contributed = False
+        for label_id in (0, 1):
+            need = args.query_per_class - len(query_by_label[label_id])
+            selected = grouped[group][label_id][: max(0, need)]
+            query_by_label[label_id].extend(selected)
+            contributed = contributed or bool(selected)
+        if contributed:
+            query_groups.add(group)
+    if any(len(query_by_label[k]) != args.query_per_class for k in (0, 1)):
+        raise RuntimeError("could not construct balanced fixed query")
+
+    support_rng = random.Random(args.seed)
+    support_group_keys = [group for group in grouped if group not in query_groups]
+    support_rng.shuffle(support_group_keys)
     support_by_label = {0: [], 1: []}
     support_groups = set()
-    for group in group_keys:
+    for group in support_group_keys:
         if all(len(support_by_label[k]) >= args.support_per_class for k in (0, 1)):
             break
-        support_groups.add(group)
+        contributed = False
         for label_id in (0, 1):
             need = args.support_per_class - len(support_by_label[label_id])
-            support_by_label[label_id].extend(grouped[group][label_id][: max(0, need)])
+            selected = grouped[group][label_id][: max(0, need)]
+            support_by_label[label_id].extend(selected)
+            contributed = contributed or bool(selected)
+        if contributed:
+            support_groups.add(group)
     if any(len(support_by_label[k]) != args.support_per_class for k in (0, 1)):
         raise RuntimeError("could not construct balanced group-held-out support")
     for label_id, label_name in enumerate(LABELS):
-        rows = selected_by_label[label_id]
         support_rows = support_by_label[label_id]
-        query_rows = [
-            row for row in rows
-            if (row["patient"], row["slide"]) not in support_groups
-        ][: args.query_per_class]
-        if len(query_rows) < args.query_per_class:
-            raise RuntimeError(
-                f"class {label_id}: group-disjoint query has {len(query_rows)} rows; "
-                "increase reservoir_size"
-            )
+        query_rows = query_by_label[label_id]
         for part, selected in (("support", support_rows), ("query", query_rows)):
             for row in selected:
                 sample_id = f"cam17-{row['image_id']}"
@@ -109,6 +132,7 @@ def main() -> None:
                     "image": str(image_path.resolve()),
                     "label": label_name,
                     "label_id": label_id,
+                    "candidate_labels": list(LABELS),
                     "question": "Does the central region contain tumor tissue? Answer exactly normal or tumor.",
                     "dataset": "camelyon17-wilds",
                     "metadata": {"patient": row["patient"], "slide": row["slide"]},
@@ -116,7 +140,9 @@ def main() -> None:
     # Patient/slide overlap is reported and forbidden: it is the medical analogue
     # of BRIGHT tile separation.
     support_group_ids = {r["group_id"] for r in manifests["support"]}
-    manifests["query"] = [r for r in manifests["query"] if r["group_id"] not in support_group_ids]
+    query_group_ids = {r["group_id"] for r in manifests["query"]}
+    if support_group_ids & query_group_ids:
+        raise RuntimeError("patient/slide overlap between support and fixed query")
     if any(sum(r["label_id"] == k for r in manifests["query"]) != args.query_per_class for k in (0, 1)):
         raise RuntimeError("group-disjoint query count differs from registered target")
     for part in manifests:
