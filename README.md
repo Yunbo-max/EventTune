@@ -2,6 +2,32 @@
 
 Few-shot event-time adaptation of a small vision-language model for building-damage assessment from paired remote-sensing images.
 
+## ICLR generalization expansion
+
+The current expansion tests a broader principle: few-shot test-time adaptation
+can modify task-relevant internal visual evidence states instead of model
+weights. It keeps one gradient-second-moment KV-TTT operator across remote
+sensing, medical imaging, and robot manipulation, changing only the visual-token
+mask. Qwen2.5-VL-7B is the primary backbone and Phi-3.5-Vision provides the
+architecture-level validation.
+
+To reproduce the pinned model and dataset preparation:
+
+```bash
+bash scripts/download_oral_assets.sh
+```
+
+The script downloads both backbones, the official ManipBench code and simplified
+dataset, and materializes three leakage-safe support seeds for Camelyon17-WILDS
+and ManipBench Q1. Large assets stay outside Git. See
+[`docs/ORAL_ASSET_STATUS.md`](docs/ORAL_ASSET_STATUS.md) for exact revisions,
+checksums, counts, and local paths.
+
+The preregistered configuration, experiment matrix, admission gates, leakage
+rules, statistical tests, artifact contract, and exact GPT-Luna handoff order
+are in [`configs/oral_generalization.yaml`](configs/oral_generalization.yaml)
+and [`docs/LUNA_ORAL_EXECUTION.md`](docs/LUNA_ORAL_EXECUTION.md).
+
 ## Project status and history
 
 **Snapshot: 2026-08-08 UTC.** The end-to-end system is implemented and has
