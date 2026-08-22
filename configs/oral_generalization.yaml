@@ -1,4 +1,7 @@
 protocol_version: 1
+experiment_budget_hours: 6
+debug_budget_hours: 0.5
+wallclock_policy: stop_after_budget_and_preserve_partial_artifacts
 data_protocol:
   query_seed: 1729
   query_policy: fixed_across_support_seeds

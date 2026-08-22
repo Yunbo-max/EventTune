@@ -51,8 +51,8 @@ KV uses rank 16, full coefficients, alpha 3, and four coefficient steps.
 The droid-arti frozen gate is below the pre-registered chance+0.02 threshold
 (0.27); it is retained and explicitly reported rather than silently dropped.
 The bridge hidden-residual arm and all three Gradient-Cov KV arms are now
-executed. Random-KV is currently recorded for bridge; Phi full evaluation,
-additional support seeds, and paired multi-seed statistics remain.
+executed. Random-KV is recorded for bridge and the seed-2 domains below;
+ManipBench seed-1 learned-arm reruns and the Phi formal matrix remain.
 
 The fixed-seed Frozen rerun for ManipBench support seed 1 is complete:
 bridge/droid-pick-place/droid-arti balanced accuracies are 0.3200/0.2725/0.2675
@@ -70,3 +70,26 @@ summaries are in `reports/camelyon_*_multiseed.json`:
 | Random-KV | 0.5360 | 0.5856 | 0.6736 |
 | Gradient-Cov KV | **0.6781** | **0.6822** | **0.5895** |
 | Hidden Residual | 0.4696 | 0.5500 | 0.6902 |
+
+ManipBench seed-2 adaptation results are now complete:
+
+| Domain / arm | Macro-F1 | Balanced accuracy | NLL |
+|---|---:|---:|---:|
+| bridge / LoRA-TTA | 0.7642 | 0.7650 | 3.2599 |
+| bridge / Gradient-Cov KV | 0.4551 | 0.4525 | 1.2028 |
+| bridge / Random-KV | 0.2203 | 0.3125 | 1.5638 |
+| bridge / Hidden Residual | 0.3058 | 0.3650 | 1.3895 |
+| droid-pick-place / LoRA-TTA | 0.7340 | 0.7350 | 2.4758 |
+| droid-pick-place / Gradient-Cov KV | 0.2466 | 0.3375 | 1.3718 |
+| droid-pick-place / Random-KV | 0.1830 | 0.2875 | 1.7203 |
+| droid-pick-place / Hidden Residual | 0.2194 | 0.3100 | 1.5973 |
+| droid-arti / LoRA-TTA | 0.7139 | 0.7150 | 2.8798 |
+| droid-arti / Gradient-Cov KV | 0.2637 | 0.3150 | 1.4714 |
+| droid-arti / Random-KV | 0.1250 | 0.2550 | 1.9344 |
+| droid-arti / Hidden Residual | 0.3078 | 0.3650 | 1.5880 |
+
+The artifact audit currently checks 51 Qwen prediction directories: all 51
+pass count, fixed-query ID/order, candidate-label, probability-sum, manifest
+hash, model fingerprint, and environment metadata checks. The six-hour batch
+budget and separate 30-minute debug allowance are recorded in the YAML
+protocol and execution contract.

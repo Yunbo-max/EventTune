@@ -31,6 +31,11 @@ rank 16, Full controller, alpha 3, middle+last decoder layers, four full-support
 updates, coefficient LR 0.05. Run it unchanged on new applications before any
 support-only tuning.
 
+The formal execution budget is six wall-clock hours per scheduled experiment
+batch, with a separate 30-minute debug allowance. Jobs stop at the budget
+boundary while preserving resumable artifacts and an explicit partial status;
+they must not silently extend the run or discard completed seeds.
+
 ## Immutable experimental rules
 
 1. Support and query IDs are written before any model evaluation.
