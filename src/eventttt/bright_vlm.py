@@ -118,6 +118,14 @@ def load_bright_vlm(model_id: str, family: Family):
         model.forward = _forward_compat
         processor = _InternVLProcessor(tokenizer, model)
         model.img_context_token_id = processor.image_token_id
+        # The remote-code wrapper delegates generation to a Qwen2 language
+        # model whose own config controls KV-cache allocation. Disable both
+        # configs; setting only the outer InternVL config leaves a large cache
+        # alive during support-set backward passes.
+        model.config.use_cache = False
+        language_model = getattr(model, "language_model", None)
+        if language_model is not None:
+            language_model.config.use_cache = False
         return model, processor
 
     from transformers import AutoProcessor
