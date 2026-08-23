@@ -113,8 +113,62 @@ def load_bright_vlm(model_id: str, family: Family):
         # remote-code forward constructs its own image-conditioned embeddings,
         # so accept and ignore that keyword while retaining input_ids.
         original_forward = model.forward
+
         def _forward_compat(*args, inputs_embeds=None, **kwargs):
-            return original_forward(*args, **kwargs)
+            # The remote wrapper always materializes full-vocabulary logits
+            # before applying its masked support loss.  For KV-TTT/LoRA we
+            # only need logits immediately before the non-ignored answer
+            # tokens; selecting those positions avoids a 24GB-card OOM while
+            # preserving the exact token cross-entropy.
+            labels = kwargs.get("labels")
+            if labels is None:
+                return original_forward(*args, **kwargs)
+            from transformers.modeling_outputs import CausalLMOutputWithPast
+
+            pixel_values = kwargs["pixel_values"]
+            input_ids = kwargs.get("input_ids")
+            attention_mask = kwargs.get("attention_mask")
+            position_ids = kwargs.get("position_ids")
+            image_flags = kwargs.get("image_flags").squeeze(-1)
+            input_embeds = model.language_model.get_input_embeddings()(input_ids).clone()
+            vit_embeds = model.extract_feature(pixel_values)
+            vit_embeds = vit_embeds[image_flags == 1]
+            batch_size, seq_len, hidden = input_embeds.shape
+            flat_embeds = input_embeds.reshape(batch_size * seq_len, hidden)
+            flat_ids = input_ids.reshape(batch_size * seq_len)
+            selected = flat_ids == model.img_context_token_id
+            flat_embeds[selected] = flat_embeds[selected] * 0.0 + vit_embeds.reshape(-1, hidden)
+            input_embeds = flat_embeds.reshape(batch_size, seq_len, hidden)
+
+            target_positions = (labels != -100).nonzero(as_tuple=False)
+            if target_positions.numel() == 0:
+                raise ValueError("InternVL training batch has no non-ignored labels")
+            # Task support batches are one row; preserve the general row
+            # index for a clear failure if that invariant changes.
+            if target_positions[:, 0].unique().numel() != 1:
+                raise ValueError("InternVL compact training path expects one row")
+            target = target_positions[:, 1]
+            keep = target - 1
+            if torch.any(keep < 0):
+                raise ValueError("answer label begins at position zero")
+            outputs = model.language_model(
+                inputs_embeds=input_embeds,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                use_cache=False,
+                output_attentions=kwargs.get("output_attentions"),
+                output_hidden_states=kwargs.get("output_hidden_states"),
+                return_dict=True,
+                logits_to_keep=keep,
+            )
+            logits = outputs.logits[0]
+            targets = labels[0, target].to(logits.device)
+            loss = torch.nn.functional.cross_entropy(logits.float(), targets)
+            return CausalLMOutputWithPast(
+                loss=loss, logits=outputs.logits,
+                past_key_values=outputs.past_key_values,
+                hidden_states=outputs.hidden_states, attentions=outputs.attentions,
+            )
         model.forward = _forward_compat
         processor = _InternVLProcessor(tokenizer, model)
         model.img_context_token_id = processor.image_token_id
