@@ -19,8 +19,11 @@ from .task_qwen import labeled_batch
 from .visual_masks import build_visual_mask_fn
 
 
-def task_visual_mask(model):
-    return build_visual_mask_fn(image_token_id_of(model), "all_visual", expected_groups=1)
+def task_visual_mask(model, processor=None):
+    token_id = getattr(processor, "image_token_id", None)
+    if token_id is None:
+        token_id = image_token_id_of(model)
+    return build_visual_mask_fn(int(token_id), "all_visual", expected_groups=1)
 
 
 def _selected_modules(model, layers=None):
@@ -33,7 +36,8 @@ def _selected_modules(model, layers=None):
 
 
 def extract_task_subspace(model, processor, samples: Sequence[TaskSample], modules,
-                          visual_mask, rank=16, basis_mode="covariance", seed=0):
+                          visual_mask, rank=16, basis_mode="covariance", seed=0,
+                          family: str = "qwen2"):
     if basis_mode not in {"covariance", "random"}:
         raise ValueError("task backend currently supports covariance or random basis")
     freeze_model(model)
@@ -52,7 +56,7 @@ def extract_task_subspace(model, processor, samples: Sequence[TaskSample], modul
     collector = KVGradientCollector(modules)
     try:
         for sample in tqdm(samples, desc="Task KV gradients", dynamic_ncols=True):
-            batch, _ = labeled_batch(processor, sample)
+            batch, _ = labeled_batch(processor, sample, family=family)
             batch = {key: value.to(device) for key, value in batch.items()}
             loss = model(**batch).loss
             loss.backward()
@@ -79,7 +83,7 @@ def extract_task_subspace(model, processor, samples: Sequence[TaskSample], modul
 
 
 def fit_task_coefficients(model, processor, samples, controller, visual_mask,
-                          steps=4, learning_rate=0.05, l2=1e-3):
+                          steps=4, learning_rate=0.05, l2=1e-3, family: str = "qwen2"):
     device = next(model.parameters()).device
     optimizer = torch.optim.Adam(controller.ttt_parameters(), lr=learning_rate)
     losses = []
@@ -88,7 +92,7 @@ def fit_task_coefficients(model, processor, samples, controller, visual_mask,
         optimizer.zero_grad(set_to_none=True)
         total = 0.0
         for sample in samples:
-            batch, _ = labeled_batch(processor, sample)
+            batch, _ = labeled_batch(processor, sample, family=family)
             batch = {key: value.to(device) for key, value in batch.items()}
             controller.set_mask(visual_mask(batch["input_ids"]))
             loss = model(**batch).loss

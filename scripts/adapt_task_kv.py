@@ -11,15 +11,17 @@ import torch
 
 from eventttt.io import model_fingerprint, read_task_samples
 from eventttt.kv_ttt import build_controller_from_state, freeze_model, save_kv_state
-from eventttt.qwen import DEFAULT_MODEL, load_model, preflight, trainable_parameter_report
+from eventttt.qwen import preflight, trainable_parameter_report
 from eventttt.task_kv import extract_task_subspace, fit_task_coefficients, task_visual_mask, _selected_modules
+from eventttt.task_vlm import default_task_model, load_task_model
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--support-manifest", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--model-id", default=DEFAULT_MODEL)
+    parser.add_argument("--family", choices=("qwen2", "qwen3_vl", "internvl3"), default="qwen2")
+    parser.add_argument("--model-id", default=None)
     parser.add_argument("--rank", type=int, default=16)
     parser.add_argument("--alpha-max", type=float, default=3.0)
     parser.add_argument("--basis-mode", choices=("covariance", "random"), default="covariance")
@@ -30,24 +32,28 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--layers", nargs="+", type=int, default=None)
     args = parser.parse_args()
+    if args.model_id is None:
+        args.model_id = default_task_model(args.family)
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
     print(json.dumps(preflight(require_gpu=True), indent=2))
     samples = read_task_samples(args.support_manifest)
-    model, processor = load_model(args.model_id, gradient_checkpointing=False, use_lora=False)
+    model, processor = load_task_model(args.model_id, args.family,
+                                       gradient_checkpointing=False, use_lora=False)
     freeze_model(model)
     report = trainable_parameter_report(model)
     modules, num_layers, layers = _selected_modules(model, args.layers)
-    mask = task_visual_mask(model)
+    mask = task_visual_mask(model, processor)
     bases, spectra = extract_task_subspace(
-        model, processor, samples, modules, mask, args.rank, args.basis_mode, args.seed
+        model, processor, samples, modules, mask, args.rank, args.basis_mode, args.seed,
+        args.family
     )
     state = {"bases": bases, "rank": args.rank, "basis_mode": args.basis_mode,
              "alpha_max": args.alpha_max, "coefficient_mode": args.coefficient_mode}
     controller = build_controller_from_state(modules, state, device=next(model.parameters()).device)
     losses = fit_task_coefficients(model, processor, samples, controller, mask,
-                                   args.steps, args.learning_rate, args.l2)
+                                   args.steps, args.learning_rate, args.l2, args.family)
     output = Path(args.output_dir); output.mkdir(parents=True, exist_ok=True)
     save_kv_state(output / "kv_state.pt", controller, args.model_id, metadata={
         "base_model_only": True, "model_sha256": model_fingerprint(args.model_id),

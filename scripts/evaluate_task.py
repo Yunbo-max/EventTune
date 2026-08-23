@@ -13,7 +13,8 @@ from tqdm.auto import tqdm
 
 from eventttt.io import read_task_samples
 from eventttt.metrics import classification_metrics_nclass
-from eventttt.qwen import DEFAULT_MODEL, load_model, preflight
+from eventttt.qwen import preflight
+from eventttt.task_vlm import default_task_model, load_task_model
 from eventttt.task_kv import task_visual_mask
 from eventttt.kv_ttt import build_controller_from_state, discover_language_decoder_kv, load_kv_state
 from eventttt.hidden_residual import HiddenResidualController, discover_hidden_layers, load_hidden_state
@@ -24,13 +25,16 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--model-id", default=DEFAULT_MODEL)
+    parser.add_argument("--family", choices=("qwen2", "qwen3_vl", "internvl3"), default="qwen2")
+    parser.add_argument("--model-id", default=None)
     parser.add_argument("--adapter", default="")
     parser.add_argument("--kv-state", default="")
     parser.add_argument("--hidden-state", default="")
     parser.add_argument("--seed", type=int, default=1729)
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
+    if args.model_id is None:
+        args.model_id = default_task_model(args.family)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -43,8 +47,8 @@ def main() -> None:
         samples = samples[:args.limit]
     if not samples:
         raise ValueError("empty task manifest")
-    model, processor = load_model(
-        args.model_id, source_adapter=args.adapter or None,
+    model, processor = load_task_model(
+        args.model_id, args.family, source_adapter=args.adapter or None,
         gradient_checkpointing=False, use_lora=bool(args.adapter),
     )
     device = next(model.parameters()).device
@@ -65,7 +69,7 @@ def main() -> None:
         if {layer for layer, _, _ in module_slice} != selected:
             raise ValueError("KV state refers to unavailable decoder layers")
         controller = build_controller_from_state(module_slice, payload, device=device)
-        visual_mask = task_visual_mask(model)
+        visual_mask = task_visual_mask(model, processor)
     if args.hidden_state:
         payload = load_hidden_state(args.hidden_state, device=device)
         recorded = str(payload["model_id"]); requested = str(args.model_id)
@@ -85,8 +89,8 @@ def main() -> None:
         with torch.no_grad():
             for key, value in payload.get("coefficients_raw", {}).items():
                 controller.coefficients[str(key)].copy_(value.to(device))
-        visual_mask = task_visual_mask(model)
-    rows = [score_task_sample(model, processor, sample, device, controller, visual_mask)
+        visual_mask = task_visual_mask(model, processor)
+    rows = [score_task_sample(model, processor, sample, device, controller, visual_mask, args.family)
             for sample in tqdm(samples, desc="Task scoring", dynamic_ncols=True)]
     labels = samples[0].candidate_labels
     if any(sample.candidate_labels != labels for sample in samples):

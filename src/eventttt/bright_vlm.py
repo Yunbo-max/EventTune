@@ -57,6 +57,19 @@ class _InternVLProcessor:
         prompt = prompt.replace("<image>", image_tokens, 1)
         return prompt
 
+    def build_task_prompt(self, sample, label: str) -> str:
+        """Build the one-image candidate prompt used by task benchmarks."""
+        template = copy.deepcopy(self.model.conv_template)
+        template.system_message = (
+            "Answer the visual question using exactly one candidate label "
+            "and no explanation."
+        )
+        template.append_message(template.roles[0], f"<image>\n{sample.question}")
+        template.append_message(template.roles[1], label)
+        prompt = template.get_prompt()
+        image_tokens = "<img>" + self.image_token * self.num_image_token + "</img>"
+        return prompt.replace("<image>", image_tokens, 1)
+
     def _image_tensor(self, image) -> torch.Tensor:
         if not isinstance(image, Image.Image):
             image = Image.fromarray(np.asarray(image))
@@ -65,8 +78,8 @@ class _InternVLProcessor:
         return ((values - self.mean) / self.std).to(self.pixel_dtype)
 
     def __call__(self, text, images=None, return_tensors="pt", **kwargs):
-        if images is None or len(images) != 2:
-            raise ValueError("InternVL BRIGHT batches require exactly two images")
+        if images is None or len(images) not in (1, 2):
+            raise ValueError("InternVL batches require one or two images")
         prompts = text if isinstance(text, list) else [text]
         encoded = self.tokenizer(prompts, return_tensors=return_tensors, padding=True)
         encoded["pixel_values"] = torch.stack([self._image_tensor(image) for image in images])

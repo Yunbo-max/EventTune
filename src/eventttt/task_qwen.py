@@ -56,9 +56,22 @@ def load_task_image(sample: TaskSample, max_size: int = 448):
     return image
 
 
-def _batch_for_candidates(processor, sample: TaskSample, image, labels: Sequence[str]):
-    process_vision_info = _require_training_packages()["process_vision_info"]
+def _batch_for_candidates(processor, sample: TaskSample, image, labels: Sequence[str],
+                          family: str = "qwen2"):
     image = image if image is not None else load_task_image(sample)
+    if family == "internvl3":
+        texts = [processor.build_task_prompt(sample, label) for label in labels]
+        # InternVL pairs one image tensor with each prompt row; repeat the
+        # same task image for the candidate batch (one row per label).
+        batch = processor(text=texts, images=[image] * len(texts), padding=True,
+                          return_tensors="pt")
+        spans = []
+        for row, label in enumerate(labels):
+            answer_ids = processor.tokenizer(label, add_special_tokens=False)["input_ids"]
+            start = _find_last_subsequence(batch["input_ids"][row].tolist(), answer_ids)
+            spans.append((start, start + len(answer_ids)))
+        return batch, spans
+    process_vision_info = _require_training_packages()["process_vision_info"]
     chats = [task_messages(sample, label, image) for label in labels]
     texts = [processor.apply_chat_template(chat, tokenize=False, add_generation_prompt=False)
              for chat in chats]
@@ -72,8 +85,8 @@ def _batch_for_candidates(processor, sample: TaskSample, image, labels: Sequence
     return batch, spans
 
 
-def labeled_batch(processor, sample: TaskSample, image=None):
-    batch, spans = _batch_for_candidates(processor, sample, image, (sample.label,))
+def labeled_batch(processor, sample: TaskSample, image=None, family: str = "qwen2"):
+    batch, spans = _batch_for_candidates(processor, sample, image, (sample.label,), family)
     labels = torch.full_like(batch["input_ids"], -100)
     start, end = spans[0]
     labels[0, start:end] = batch["input_ids"][0, start:end]
@@ -82,7 +95,7 @@ def labeled_batch(processor, sample: TaskSample, image=None):
 
 
 def candidate_scores(model, processor, sample: TaskSample, image=None, device=None,
-                     controller=None, visual_mask=None):
+                     controller=None, visual_mask=None, family: str = "qwen2"):
     model.eval()
     device = device or next(model.parameters()).device
     # Score all candidate completions in one padded forward.  This keeps the
@@ -90,7 +103,7 @@ def candidate_scores(model, processor, sample: TaskSample, image=None, device=No
     # avoiding a separate 7B forward for every label.
     image = image if image is not None else load_task_image(sample)
     labels = tuple(sample.candidate_labels)
-    batch, spans = _batch_for_candidates(processor, sample, image, labels)
+    batch, spans = _batch_for_candidates(processor, sample, image, labels, family)
     batch = {key: value.to(device) for key, value in batch.items()}
     with torch.inference_mode():
         if controller is not None:
@@ -111,9 +124,9 @@ def candidate_scores(model, processor, sample: TaskSample, image=None, device=No
 
 
 def score_task_sample(model, processor, sample: TaskSample, device=None,
-                      controller=None, visual_mask=None) -> dict:
+                      controller=None, visual_mask=None, family: str = "qwen2") -> dict:
     scores = candidate_scores(model, processor, sample, device=device,
-                              controller=controller, visual_mask=visual_mask)
+                              controller=controller, visual_mask=visual_mask, family=family)
     probabilities = product_of_experts([scores.tolist()])
     prediction_id = int(np.argmax(probabilities))
     return {
@@ -131,7 +144,7 @@ def score_task_sample(model, processor, sample: TaskSample, device=None,
 def fit_task_lora(
     model, processor, samples: Sequence[TaskSample],
     passes: int = 4, learning_rate: float = 2e-4,
-    seed: int = 0, max_grad_norm: float = 1.0,
+    seed: int = 0, max_grad_norm: float = 1.0, family: str = "qwen2",
 ) -> list[float]:
     """Fixed-duration support-only LoRA fit for single-image tasks."""
     if passes < 0:
@@ -149,7 +162,7 @@ def fit_task_lora(
         order = torch.randperm(len(samples), generator=generator).tolist()
         total = 0.0
         for index in order:
-            batch, _ = labeled_batch(processor, samples[index])
+            batch, _ = labeled_batch(processor, samples[index], family=family)
             device = next(model.parameters()).device
             batch = {key: value.to(device) for key, value in batch.items()}
             loss = model(**batch).loss
