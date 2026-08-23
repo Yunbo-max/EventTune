@@ -150,7 +150,9 @@ def main():
     config = {"family": args.family, "model_id": model_id, "dataset": args.dataset,
               "domain": args.domain, "seed": args.seed, "support": len(support),
               "query": len(query), "methods": ["frozen", "lora", "random_kv", "ours"],
-              "image_max_size": 448, "lora_passes": 4, "kv_rank": 16,
+              "image_max_size": 224 if args.family == "internvl3" else 448,
+              "visual_tokens": 64 if args.family == "internvl3" else None,
+              "lora_passes": 4, "kv_rank": 16,
               "kv_layers": [14, 27], "kv_steps": 4, "kv_alpha_max": 3.0,
               "kv_learning_rate": 0.05, "kv_l2": 1e-3}
     (out_root / "config.json").write_text(json.dumps(config, indent=2) + "\n")
