@@ -78,8 +78,8 @@ class _InternVLProcessor:
         return ((values - self.mean) / self.std).to(self.pixel_dtype)
 
     def __call__(self, text, images=None, return_tensors="pt", **kwargs):
-        if images is None or len(images) not in (1, 2):
-            raise ValueError("InternVL batches require one or two images")
+        if images is None or len(images) < 1:
+            raise ValueError("InternVL batches require at least one image")
         prompts = text if isinstance(text, list) else [text]
         encoded = self.tokenizer(prompts, return_tensors=return_tensors, padding=True)
         encoded["pixel_values"] = torch.stack([self._image_tensor(image) for image in images])
