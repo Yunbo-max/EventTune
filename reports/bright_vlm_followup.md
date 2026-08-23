@@ -64,5 +64,11 @@ gate. Macro-F1 / balanced accuracy / NLL:
 | Gemma 3 4B | 0.1667 / 0.3333 / 10.0532 | 0.3081 / 0.3700 / 2.6264 | 0.1667 / 0.3333 / 10.0216 | 0.1667 / 0.3333 / 9.9343 |
 | Llama-backed LLaVA | 0.2252 / 0.3267 / 1.2679 | 0.1667 / 0.3333 / 1.1141 | 0.2252 / 0.3267 / 1.2678 | 0.2098 / 0.3267 / 1.2691 |
 
-These Hawaii numbers are one-event diagnostics, not a claim of generalization;
-the 11-fold adapter expansion remains a separate, longer run.
+These Hawaii numbers are one-event diagnostics, not a claim of generalization
+or a direct comparison to the registered Qwen BRIGHT suite. In particular,
+this follow-up used `support_12`, a diagonal rank-8 controller with
+`alpha_max=0.5`, and architecture-relative middle/final layers. The registered
+Qwen balanced suite uses the uniform-event subset, `target_support` (24
+examples), and its locked full rank-16/alpha-3 configuration. Therefore the
+adapter table above must not be used to claim that Gradient-Cov KV loses to a
+baseline; an apples-to-apples Phi/Gemma/Llama rerun is still required.
