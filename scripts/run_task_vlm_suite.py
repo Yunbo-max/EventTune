@@ -85,7 +85,13 @@ def run_method(method, family, model_id, support, query, out):
                 seed=0, family=family,
             )
         elif method in {"random_kv", "ours"}:
-            model, processor = _load(family, model_id)
+            # InternVL's Qwen2 language decoder otherwise retains enough
+            # backward activations across the 32-example support pass to
+            # exceed a 24 GiB card. Checkpointing is a memory-only change;
+            # the frozen/KV protocol and optimizer steps are unchanged.
+            model, processor = _load(
+                family, model_id, checkpoint=(family == "internvl3")
+            )
             freeze_model(model)
             modules, layer_count, layers = _selected_modules(model, [14, 27])
             mask = task_visual_mask(model, processor)
