@@ -47,6 +47,10 @@ def load_phi(model_id, source_adapter=None, use_lora=False, efficient_attention=
         config_lora = LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05,
             bias='none', task_type='CAUSAL_LM', target_modules=['qkv_proj','o_proj'])
         model = get_peft_model(model, config_lora)
+    # The remote Phi-3.5-Vision modeling file still expects the legacy cache
+    # API. Disabling cache is correct for scoring/training and keeps it
+    # compatible with current Transformers releases.
+    model.config.use_cache = False
     return model, processor
 
 def load_task_image(sample: TaskSample, max_size=448):

@@ -23,7 +23,7 @@ train = [
   "peft>=0.14,<0.15",
   "qwen-vl-utils>=0.0.8",
   "torchvision>=0.15,<1",
-  "transformers>=4.49,<4.50",
+  "transformers>=4.57,<5",
 ]
 test = ["pytest>=8"]
 

@@ -65,8 +65,10 @@ class PhiKVController(nn.Module):
     def ttt_parameters(self): return list(self.coefficients.parameters())
     def num_scalars(self): return sum(p.numel() for p in self.ttt_parameters())
 
-def extract_phi_subspace(model,processor,samples,modules,rank=16,basis_mode='covariance',seed=0):
+def extract_phi_subspace(model,processor,samples,modules,rank=16,basis_mode='covariance',seed=0,batch_builder=None,mask_builder=None):
     freeze_model(model); model.eval(); device=next(model.parameters()).device
+    batch_builder = batch_builder or labeled_batch
+    mask_builder = mask_builder or phi_visual_mask
     model.config.use_cache=False
     checkpoint=getattr(model,'gradient_checkpointing_enable',None)
     if callable(checkpoint): checkpoint()
@@ -82,7 +84,7 @@ def extract_phi_subspace(model,processor,samples,modules,rank=16,basis_mode='cov
     for layer,mod,_ in modules: handles.append(mod.register_forward_hook(cap(layer)))
     try:
         for sample in tqdm(samples,desc='Phi KV gradients',dynamic_ncols=True):
-            batch,_=labeled_batch(processor,sample); batch={k:v.to(device) for k,v in batch.items()}; loss=model(**batch).loss; loss.backward(); mask=phi_visual_mask(batch['input_ids'])
+            batch,_=batch_builder(processor,sample); batch={k:v.to(device) for k,v in batch.items()}; loss=model(**batch).loss; loss.backward(); mask=mask_builder(batch['input_ids'])
             for layer,_,dim in modules:
                 grad=saved[layer].grad
                 for kind,start in [('K',dim),('V',2*dim)]:
@@ -97,12 +99,12 @@ def extract_phi_subspace(model,processor,samples,modules,rank=16,basis_mode='cov
         vals,vecs=torch.linalg.eigh(matrix.detach().cpu()); vals,order=torch.sort(vals,descending=True); bases[key]=vecs[:,order[:rank]].contiguous(); spectra[str(key)]=[float(v) for v in vals[:rank*3]]
     return bases,spectra
 
-def fit_phi_coefficients(model,processor,samples,controller,steps=4,learning_rate=.05,l2=1e-3):
-    device=next(model.parameters()).device; opt=torch.optim.Adam(controller.ttt_parameters(),lr=learning_rate); losses=[]
+def fit_phi_coefficients(model,processor,samples,controller,steps=4,learning_rate=.05,l2=1e-3,batch_builder=None,mask_builder=None):
+    device=next(model.parameters()).device; batch_builder = batch_builder or labeled_batch; mask_builder = mask_builder or phi_visual_mask; opt=torch.optim.Adam(controller.ttt_parameters(),lr=learning_rate); losses=[]
     for _ in range(steps):
         opt.zero_grad(set_to_none=True); total=0.
         for sample in samples:
-            batch,_=labeled_batch(processor,sample); batch={k:v.to(device) for k,v in batch.items()}; controller.set_mask(phi_visual_mask(batch['input_ids'])); loss=model(**batch).loss; controller.clear_mask(); loss.backward(); total+=float(loss.detach())
+            batch,_=batch_builder(processor,sample); batch={k:v.to(device) for k,v in batch.items()}; controller.set_mask(mask_builder(batch['input_ids'])); loss=model(**batch).loss; controller.clear_mask(); loss.backward(); total+=float(loss.detach())
         penalty=l2*sum(p.pow(2).sum() for p in controller.ttt_parameters()); penalty.backward(); torch.nn.utils.clip_grad_norm_(controller.ttt_parameters(),1.); opt.step(); losses.append(total/len(samples)+float(penalty.detach()))
     return losses
 

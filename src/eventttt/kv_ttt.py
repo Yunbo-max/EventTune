@@ -76,6 +76,12 @@ def discover_language_decoder_kv(
     PEFT-style wrappers do not require hard-coded nesting."""
     found: list[tuple[int, str, nn.Module]] = []
     for name, module in model.named_modules():
+        # Multimodal backbones often expose a second ``layers.*.self_attn``
+        # tree in the vision tower. KV-TTT is defined on the language decoder
+        # only; selecting a vision projection would silently give a dimension
+        # mismatch (and violate the post-image language residual contract).
+        if any(part in name.lower() for part in ("vision_tower", "vision_model", "vision_encoder")):
+            continue
         match = _KV_MODULE_RE.search(name)
         if match is None:
             continue
@@ -122,6 +128,12 @@ def build_post_image_mask_fn(image_token_id: int) -> Callable[[torch.Tensor], to
                 )
             boundaries = (positions[1:] != positions[:-1] + 1).nonzero(as_tuple=False).flatten() + 1
             groups = list(torch.tensor_split(positions, boundaries.tolist()))
+            # Some processors concatenate adjacent ``<image>`` placeholders
+            # into one expanded run. The two crops are equal-sized, so the
+            # midpoint is an unambiguous pre/post boundary in that case.
+            if len(groups) == 1 and positions.numel() >= 4 and positions.numel() % 2 == 0:
+                midpoint = positions.numel() // 2
+                groups = [positions[:midpoint], positions[midpoint:]]
             if len(groups) != 2:
                 raise ValueError(
                     f"Row {row_index} expected exactly two image groups (pre, post), found {len(groups)}"
@@ -337,6 +349,7 @@ def extract_kv_subspace(
     progress: bool = True,
     basis_mode: str = "covariance",
     basis_seed: int = 0,
+    batch_builder: Callable | None = None,
 ) -> tuple[dict[tuple[int, str], torch.Tensor], dict[str, list[float]]]:
     """Correctness-gradient KV subspace extraction over the support set.
 
@@ -356,6 +369,7 @@ def extract_kv_subspace(
     model.enable_input_require_grads()
 
     device = next(model.parameters()).device
+    batch_builder = batch_builder or build_labeled_batch
     dims = {(layer_id, kind): module.out_features for layer_id, kind, module in modules}
     if basis_mode == "random":
         generator = torch.Generator(device="cpu").manual_seed(basis_seed)
@@ -377,7 +391,7 @@ def extract_kv_subspace(
     samples = list(support)
     try:
         for sample in tqdm(samples, desc="KV gradients", dynamic_ncols=True, disable=not progress):
-            batch, span = build_labeled_batch(processor, sample, crop_size)
+            batch, span = batch_builder(processor, sample, crop_size)
             loss = strict_generation_loss(model, batch, span, device)
             loss.backward()
             post_mask = build_post_mask(batch["input_ids"])
@@ -655,6 +669,7 @@ def fit_kv_coefficients(
     max_grad_norm: float = 1.0,
     crop_size: int = 448,
     progress: bool = True,
+    batch_builder: Callable | None = None,
 ) -> list[float]:
     """Optimize only the KV coefficients over the whole support set (no random
     sampling). One optimizer update accumulates every support example."""
@@ -665,6 +680,7 @@ def fit_kv_coefficients(
     model.config.use_cache = False
 
     device = next(model.parameters()).device
+    batch_builder = batch_builder or build_labeled_batch
     samples = list(samples)
     optimizer = torch.optim.Adam(controller.ttt_parameters(), lr=learning_rate)
     losses: list[float] = []
@@ -675,7 +691,7 @@ def fit_kv_coefficients(
         optimizer.zero_grad(set_to_none=True)
         accumulated = 0.0
         for sample in samples:
-            batch, span = build_labeled_batch(processor, sample, crop_size)
+            batch, span = batch_builder(processor, sample, crop_size)
             batch = {key: value.to(device) for key, value in batch.items()}
             controller.set_mask(build_post_mask(batch["input_ids"]))
             loss = strict_generation_loss(model, batch, span, device)

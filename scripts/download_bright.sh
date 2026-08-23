@@ -6,11 +6,31 @@ DESTINATION="${2:-data/raw/bright}"
 RECORD="https://zenodo.org/records/20072020/files"
 
 mkdir -p "${DESTINATION}"
+zip_ok() {
+  python3 - "$1" <<'PY'
+from zipfile import ZipFile
+import sys
+try:
+    with ZipFile(sys.argv[1]) as archive:
+        bad = archive.testzip()
+    raise SystemExit(0 if bad is None else 1)
+except Exception:
+    raise SystemExit(1)
+PY
+}
+extract_zip() {
+  python3 - "$1" "$2" <<'PY'
+from zipfile import ZipFile
+import sys
+with ZipFile(sys.argv[1]) as archive:
+    archive.extractall(sys.argv[2])
+PY
+}
 download() {
   local name="$1"
   local archive="${DESTINATION}/${name}"
   local partial="${archive}.part"
-  if [[ -f "${archive}" ]] && ! unzip -tq "${archive}" >/dev/null 2>&1; then
+  if [[ -f "${archive}" ]] && ! zip_ok "${archive}"; then
     if [[ -f "${partial}" ]]; then
       echo "Both incomplete files exist for ${name}; keep the larger one and retry manually." >&2
       exit 1
@@ -25,7 +45,7 @@ download() {
       "${RECORD}/${name}?download=1"
     mv "${partial}" "${archive}"
   fi
-  unzip -n -q "${archive}" -d "${DESTINATION}"
+  extract_zip "${archive}" "${DESTINATION}"
 }
 
 download cvprw26_trainval_instance_labels.zip
