@@ -43,6 +43,7 @@ class _InternVLProcessor:
         self.std = torch.tensor((0.229, 0.224, 0.225), dtype=torch.float32).view(3, 1, 1)
 
     def build_prompt(self, sample: Sample, label: str) -> str:
+        self._task_mode = False
         template = copy.deepcopy(self.model.conv_template)
         template.system_message = SYSTEM_PROMPT
         question = (
@@ -59,6 +60,7 @@ class _InternVLProcessor:
 
     def build_task_prompt(self, sample, label: str) -> str:
         """Build the one-image candidate prompt used by task benchmarks."""
+        self._task_mode = True
         template = copy.deepcopy(self.model.conv_template)
         template.system_message = (
             "Answer the visual question using exactly one candidate label "
@@ -67,13 +69,19 @@ class _InternVLProcessor:
         template.append_message(template.roles[0], f"<image>\n{sample.question}")
         template.append_message(template.roles[1], label)
         prompt = template.get_prompt()
-        image_tokens = "<img>" + self.image_token * self.num_image_token + "</img>"
+        # A 224px task image produces one quarter of the native 448px
+        # InternVL visual tokens. This keeps the long ManipBench question
+        # sequence within a 24GB card; BRIGHT continues to use 448px/256
+        # tokens through build_prompt above.
+        task_tokens = max(1, self.num_image_token // 4)
+        image_tokens = "<img>" + self.image_token * task_tokens + "</img>"
         return prompt.replace("<image>", image_tokens, 1)
 
     def _image_tensor(self, image) -> torch.Tensor:
         if not isinstance(image, Image.Image):
             image = Image.fromarray(np.asarray(image))
-        image = image.convert("RGB").resize((448, 448), Image.Resampling.BICUBIC)
+        size = 224 if getattr(self, "_task_mode", False) else 448
+        image = image.convert("RGB").resize((size, size), Image.Resampling.BICUBIC)
         values = torch.from_numpy(np.asarray(image, dtype=np.float32)).permute(2, 0, 1) / 255.0
         return ((values - self.mean) / self.std).to(self.pixel_dtype)
 
