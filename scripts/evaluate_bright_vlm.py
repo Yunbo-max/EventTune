@@ -17,7 +17,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Frozen Gemma/Llama BRIGHT evaluation")
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--model-id", required=True)
-    parser.add_argument("--family", choices=("phi", "gemma", "llama"), required=True)
+    parser.add_argument("--family", choices=("phi", "gemma", "llama", "qwen3_vl"), required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--crop-size", type=int, default=448)

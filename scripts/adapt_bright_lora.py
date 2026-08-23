@@ -22,7 +22,7 @@ def main() -> None:
     parser.add_argument("--support-manifest", required=True)
     parser.add_argument("--query-manifest", required=True)
     parser.add_argument("--model-id", required=True)
-    parser.add_argument("--family", choices=("phi", "gemma", "llama"), required=True)
+    parser.add_argument("--family", choices=("phi", "gemma", "llama", "qwen3_vl"), required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--passes", type=int, default=1)
     parser.add_argument("--grad-accum-steps", type=int, default=3)

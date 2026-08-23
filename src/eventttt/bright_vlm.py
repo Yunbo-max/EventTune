@@ -1,4 +1,4 @@
-"""Shared frozen BRIGHT scorer for Gemma 3 and Llama-backed LLaVA models.
+"""Shared frozen BRIGHT scorer for the supported multimodal model families.
 
 The model families use different multimodal chat conventions, but both are
 evaluated with the same paired pre/post crop and candidate-label likelihood
@@ -19,12 +19,12 @@ from .schemas import DAMAGE_LABELS, Sample
 from .vision import crop_pair, load_image
 
 
-Family = Literal["phi", "gemma", "llama"]
+Family = Literal["phi", "gemma", "llama", "qwen3_vl"]
 
 
 def load_bright_vlm(model_id: str, family: Family):
-    """Load a Gemma 3 or Llama-backed LLaVA checkpoint for frozen scoring."""
-    from transformers import AutoModelForImageTextToText, AutoProcessor
+    """Load one of the supported checkpoints for frozen scoring."""
+    from transformers import AutoProcessor
 
     if family == "phi":
         from .task_phi import load_phi
@@ -32,6 +32,16 @@ def load_bright_vlm(model_id: str, family: Family):
         return load_phi(model_id, efficient_attention=True)
 
     processor = AutoProcessor.from_pretrained(model_id)
+    if family == "qwen3_vl":
+        # Qwen3-VL is exposed by the current Transformers integration rather
+        # than AutoModelForImageTextToText in older releases.
+        from transformers import Qwen3VLForConditionalGeneration
+
+        model = Qwen3VLForConditionalGeneration.from_pretrained(
+            model_id, dtype=torch.bfloat16, device_map="auto"
+        )
+        return model, processor
+    from transformers import AutoModelForImageTextToText
     if family == "llama":
         # Older LLaVA checkpoints omit these processor fields even though the
         # CLIP vision config has a 14px patch and a CLS token.
@@ -79,7 +89,7 @@ def _phi_text(sample: Sample, label: str) -> str:
 def _inputs_for_candidate(
     processor, model_family: Family, sample: Sample, label: str, pre, post
 ):
-    if model_family == "gemma":
+    if model_family in ("gemma", "qwen3_vl"):
         text = processor.apply_chat_template(
             messages(_variant(sample, label), True, pre, post),
             tokenize=False,
