@@ -25,7 +25,7 @@ def main() -> None:
     parser.add_argument("--support-manifest", required=True)
     parser.add_argument("--query-manifest", required=True)
     parser.add_argument("--model-id", required=True)
-    parser.add_argument("--family", choices=("phi", "gemma", "llama", "qwen3_vl"), required=True)
+    parser.add_argument("--family", choices=("phi", "gemma", "llama", "qwen3_vl", "internvl3"), required=True)
     parser.add_argument("--method", choices=("random_kv", "gradient_cov_kv"), required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--rank", type=int, default=16)

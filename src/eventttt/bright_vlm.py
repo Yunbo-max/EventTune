@@ -7,10 +7,12 @@ protocol.  This module intentionally does not add a generation fallback.
 
 from __future__ import annotations
 
+import copy
 from typing import Literal
 
 import numpy as np
 import torch
+from PIL import Image
 
 from .aggregation import product_of_experts
 from .prompts import SYSTEM_PROMPT, messages, question_for
@@ -19,11 +21,92 @@ from .schemas import DAMAGE_LABELS, Sample
 from .vision import crop_pair, load_image
 
 
-Family = Literal["phi", "gemma", "llama", "qwen3_vl"]
+Family = Literal["phi", "gemma", "llama", "qwen3_vl", "internvl3"]
+
+
+class _InternVLProcessor:
+    """Small processor adapter for InternVL's remote-code model.
+
+    InternVL3 exposes a tokenizer and model-specific image-token convention,
+    but no ``AutoProcessor``.  This wrapper keeps the rest of the BRIGHT
+    pipeline identical to the other families.
+    """
+
+    def __init__(self, tokenizer, model):
+        self.tokenizer = tokenizer
+        self.model = model
+        self.num_image_token = int(model.num_image_token)
+        self.image_token = "<IMG_CONTEXT>"
+        self.image_token_id = int(tokenizer.convert_tokens_to_ids(self.image_token))
+        self.pixel_dtype = next(model.vision_model.parameters()).dtype
+        self.mean = torch.tensor((0.485, 0.456, 0.406), dtype=torch.float32).view(3, 1, 1)
+        self.std = torch.tensor((0.229, 0.224, 0.225), dtype=torch.float32).view(3, 1, 1)
+
+    def build_prompt(self, sample: Sample, label: str) -> str:
+        template = copy.deepcopy(self.model.conv_template)
+        template.system_message = SYSTEM_PROMPT
+        question = (
+            "<image>\n<image>\n"
+            f"{question_for(sample)}"
+        )
+        template.append_message(template.roles[0], question)
+        template.append_message(template.roles[1], label)
+        prompt = template.get_prompt()
+        image_tokens = "<img>" + self.image_token * self.num_image_token + "</img>"
+        prompt = prompt.replace("<image>", image_tokens, 1)
+        prompt = prompt.replace("<image>", image_tokens, 1)
+        return prompt
+
+    def _image_tensor(self, image) -> torch.Tensor:
+        if not isinstance(image, Image.Image):
+            image = Image.fromarray(np.asarray(image))
+        image = image.convert("RGB").resize((448, 448), Image.Resampling.BICUBIC)
+        values = torch.from_numpy(np.asarray(image, dtype=np.float32)).permute(2, 0, 1) / 255.0
+        return ((values - self.mean) / self.std).to(self.pixel_dtype)
+
+    def __call__(self, text, images=None, return_tensors="pt", **kwargs):
+        if images is None or len(images) != 2:
+            raise ValueError("InternVL BRIGHT batches require exactly two images")
+        prompts = text if isinstance(text, list) else [text]
+        encoded = self.tokenizer(prompts, return_tensors=return_tensors, padding=True)
+        encoded["pixel_values"] = torch.stack([self._image_tensor(image) for image in images])
+        encoded["image_flags"] = torch.ones((len(images), 1), dtype=torch.long)
+        self.model.img_context_token_id = self.image_token_id
+        return encoded
+
+    def save_pretrained(self, path):
+        self.tokenizer.save_pretrained(path)
 
 
 def load_bright_vlm(model_id: str, family: Family):
     """Load one of the supported checkpoints for frozen scoring."""
+    if family == "internvl3":
+        from transformers import AutoModel, AutoTokenizer
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_id, trust_remote_code=True, use_fast=False
+        )
+        # InternVL3-8B fits frozen inference and checkpointed LoRA on a 24GB
+        # RTX 3090 in bf16.  Keeping the full model on one device avoids the
+        # meta-parameter gradient problem caused by CPU offload during TTA.
+        model = AutoModel.from_pretrained(
+            model_id,
+            dtype=torch.bfloat16,
+            trust_remote_code=True,
+            device_map="auto",
+            use_flash_attn=False,
+        ).eval()
+        # PEFT forwards an unused ``inputs_embeds`` keyword.  InternVL's
+        # remote-code forward constructs its own image-conditioned embeddings,
+        # so accept and ignore that keyword while retaining input_ids.
+        original_forward = model.forward
+        def _forward_compat(*args, inputs_embeds=None, **kwargs):
+            return original_forward(*args, **kwargs)
+        model.forward = _forward_compat
+        processor = _InternVLProcessor(tokenizer, model)
+        model.img_context_token_id = processor.image_token_id
+        return model, processor
+
     from transformers import AutoProcessor
 
     if family == "phi":
@@ -97,6 +180,8 @@ def _inputs_for_candidate(
         )
     elif model_family == "llama":
         text = _llama_text(sample, label)
+    elif model_family == "internvl3":
+        text = processor.build_prompt(_variant(sample, label), label)
     else:
         text = _phi_text(sample, label)
     text_arg = text if model_family == "phi" else [text]

@@ -32,7 +32,8 @@ def image_token_id(model, processor) -> int:
             return int(value)
     tokenizer = getattr(processor, "tokenizer", None)
     if tokenizer is not None:
-        value = tokenizer.convert_tokens_to_ids("<image>")
+        token = "<IMG_CONTEXT>" if getattr(processor, "image_token_id", None) is not None else "<image>"
+        value = tokenizer.convert_tokens_to_ids(token)
         if value is not None and int(value) >= 0:
             return int(value)
     raise RuntimeError("Could not determine the BRIGHT image token id")

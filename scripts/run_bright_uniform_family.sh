@@ -8,6 +8,8 @@ FAMILY=${2:?family required}
 ROOT=${3:?output root required}
 PYTHON_BIN=${PYTHON_BIN:-python3}
 export PYTHONPATH="${PWD}/src${PYTHONPATH:+:${PYTHONPATH}}"
+# Reduce allocator fragmentation across the repeated model subprocesses.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 events=(hawaii-wildfire libya-flood noto-earthquake turkey-earthquake)
 for event in "${events[@]}"; do
