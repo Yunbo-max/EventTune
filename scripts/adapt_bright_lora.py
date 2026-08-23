@@ -24,7 +24,8 @@ def main() -> None:
     parser.add_argument("--model-id", required=True)
     parser.add_argument("--family", choices=("phi", "gemma", "llama"), required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--passes", type=int, default=4)
+    parser.add_argument("--passes", type=int, default=1)
+    parser.add_argument("--grad-accum-steps", type=int, default=3)
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--crop-size", type=int, default=448)
     parser.add_argument("--query-limit", type=int, default=None)
@@ -41,7 +42,7 @@ def main() -> None:
     model = enable_bright_lora(model, args.family)
     losses = fit_bright_lora(
         model, processor, args.family, support, args.crop_size,
-        args.passes, args.learning_rate, args.seed,
+        args.passes, args.learning_rate, args.seed, args.grad_accum_steps,
     )
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -68,6 +69,7 @@ def main() -> None:
         "method": "bright_support_lora_tta", "model_id": args.model_id,
         "family": args.family, "support_examples": len(support),
         "query_examples": len(query), "passes": args.passes,
+        "grad_accum_steps": args.grad_accum_steps,
         "learning_rate": args.learning_rate, "rank": 16, "alpha": 32,
         "target_modules": ["qkv_proj", "o_proj"] if args.family == "phi" else
                           ["q_proj", "k_proj", "v_proj", "o_proj"],

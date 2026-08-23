@@ -134,13 +134,16 @@ def enable_bright_lora(model, model_family: Family, rank: int = 16,
 
 
 def fit_bright_lora(model, processor, model_family: Family, samples,
-                    crop_size: int = 448, passes: int = 4,
-                    learning_rate: float = 2e-4, seed: int = 0):
+                    crop_size: int = 448, passes: int = 1,
+                    learning_rate: float = 2e-4, seed: int = 0,
+                    grad_accum_steps: int = 3):
     """Support-only supervised LoRA fit; query samples never enter this loop."""
     if passes < 0:
         raise ValueError("passes must be non-negative")
     if not samples or passes == 0:
         return []
+    if grad_accum_steps < 1:
+        raise ValueError("grad_accum_steps must be positive")
     generator = torch.Generator().manual_seed(seed)
     trainable = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(trainable, lr=learning_rate)
@@ -150,16 +153,18 @@ def fit_bright_lora(model, processor, model_family: Family, samples,
     for _ in range(passes):
         total = 0.0
         order = torch.randperm(len(samples), generator=generator).tolist()
-        for index in order:
+        optimizer.zero_grad(set_to_none=True)
+        for position, index in enumerate(order, start=1):
             batch, _ = bright_labeled_batch(
                 processor, model_family, samples[index], crop_size
             )
             batch = {key: value.to(device) for key, value in batch.items()}
             loss = model(**batch).loss
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(trainable, 1.0)
-            optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
+            (loss / grad_accum_steps).backward()
+            if position % grad_accum_steps == 0 or position == len(order):
+                torch.nn.utils.clip_grad_norm_(trainable, 1.0)
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
             total += float(loss.detach())
         losses.append(total / len(samples))
     return losses

@@ -28,7 +28,10 @@ def main() -> None:
     parser.add_argument("--family", choices=("phi", "gemma", "llama"), required=True)
     parser.add_argument("--method", choices=("random_kv", "gradient_cov_kv"), required=True)
     parser.add_argument("--output-dir", required=True)
-    parser.add_argument("--rank", type=int, default=8)
+    parser.add_argument("--rank", type=int, default=16)
+    parser.add_argument("--alpha-max", type=float, default=3.0)
+    parser.add_argument("--coefficient-mode", choices=("full", "diagonal"), default="full")
+    parser.add_argument("--layers", type=int, nargs="+", default=[14, 27])
     parser.add_argument("--steps", type=int, default=4)
     parser.add_argument("--crop-size", type=int, default=448)
     parser.add_argument("--query-limit", type=int, default=None)
@@ -41,7 +44,9 @@ def main() -> None:
         query = query[:args.query_limit]
     model, processor = load_bright_vlm(args.model_id, args.family)
     modules, num_layers = discover_bright_kv(model, args.family, processor)
-    selected = set(default_layers(num_layers))
+    selected = set(args.layers)
+    if min(selected) < 0 or max(selected) >= num_layers:
+        raise ValueError(f"Requested layers {sorted(selected)} outside model depth {num_layers}")
     if args.family == "phi":
         modules = [item for item in modules if item[0] in selected]
     else:
@@ -56,8 +61,8 @@ def main() -> None:
             mask_builder=mask,
         )
         controller = PhiKVController(
-            modules, bases, rank=args.rank, alpha_max=0.5,
-            coefficient_mode="diagonal",
+            modules, bases, rank=args.rank, alpha_max=args.alpha_max,
+            coefficient_mode=args.coefficient_mode,
             device=next(model.parameters()).device,
         )
         losses = fit_phi_coefficients(
@@ -71,8 +76,8 @@ def main() -> None:
             batch_builder=builder,
         )
         controller = ResidualKVController(
-            modules, bases, rank=args.rank, alpha_max=0.5,
-            coefficient_mode="diagonal",
+            modules, bases, rank=args.rank, alpha_max=args.alpha_max,
+            coefficient_mode=args.coefficient_mode,
             device=next(model.parameters()).device,
         )
         losses = fit_kv_coefficients(
@@ -104,7 +109,9 @@ def main() -> None:
     (output / "adaptation.json").write_text(json.dumps({
         "method": args.method, "family": args.family, "model_id": args.model_id,
         "support_examples": len(support), "query_examples": len(query),
-        "rank": args.rank, "steps": args.steps, "layers": sorted(selected),
+        "rank": args.rank, "alpha_max": args.alpha_max,
+        "coefficient_mode": args.coefficient_mode, "steps": args.steps,
+        "learning_rate": 0.05, "l2": 1e-3, "layers": sorted(selected),
         "losses": losses, "arguments": vars(args),
     }, indent=2) + "\n")
     controller.close()
