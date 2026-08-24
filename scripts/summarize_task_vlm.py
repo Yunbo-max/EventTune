@@ -54,9 +54,12 @@ def main():
     Path(args.output_json).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output_json).write_text(json.dumps(payload, indent=2) + "\n")
     lines = ["# Formal Camelyon17 / ManipBench task-VLM results", "",
-             "Protocol: 448px deterministic resize; Camelyon17 hospital_2 has "
-             "3 support seeds and 300 queries; each ManipBench Q1 domain has "
-             "3 support seeds and 400 queries. Each fold evaluates Frozen, "
+             "Protocol: identical support/query splits, seeds, and adaptation "
+             "methods across model families. Qwen3-VL uses a deterministic "
+             "448px image budget (256 visual tokens); InternVL3 uses 224px "
+             "(64 visual tokens) to fit the 24GB GPU. Camelyon17 hospital_2 "
+             "has 3 support seeds and 300 queries; each ManipBench Q1 domain "
+             "has 3 support seeds and 400 queries. Each fold evaluates Frozen, "
              "four-pass LoRA, Random-KV, and Gradient-Cov KV (Ours).", "",
              f"Completed metric files: {len(rows)}/96.", "",
              "| Family | Dataset/domain | Method | folds | Macro-F1 mean±sd | BA mean±sd | NLL mean±sd |",
