@@ -1,5 +1,7 @@
 # Formal Camelyon17 / ManipBench task-VLM results
 
+**Important correction:** the historical InternVL3 ManipBench rows in this file used a mismatched raw-label answer format and are superseded by [`internvl3_corrected_task_results.md`](internvl3_corrected_task_results.md). The Qwen3-VL rows remain valid.
+
 Protocol: identical support/query splits, seeds, and adaptation methods across model families. Qwen3-VL uses a deterministic 448px image budget (256 visual tokens); InternVL3 uses 224px (64 visual tokens) to fit the 24GB GPU. Camelyon17 hospital_2 has 3 support seeds and 300 queries; each ManipBench Q1 domain has 3 support seeds and 400 queries. Each fold evaluates Frozen, four-pass LoRA, Random-KV, and Gradient-Cov KV (Ours).
 
 Completed metric files: 96/96.
