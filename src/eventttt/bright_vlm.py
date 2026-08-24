@@ -63,11 +63,14 @@ class _InternVLProcessor:
         self._task_mode = True
         template = copy.deepcopy(self.model.conv_template)
         template.system_message = (
-            "Answer the visual question using exactly one candidate label "
-            "and no explanation."
+            "Answer the visual question using exactly the format "
+            "'Answer: <candidate label>' and no explanation."
         )
         template.append_message(template.roles[0], f"<image>\n{sample.question}")
-        template.append_message(template.roles[1], label)
+        # InternVL's instruction-tuned chat head is trained to emit the
+        # benchmark's explicit answer prefix.  Omitting it makes the raw
+        # single-letter tokens (A/B/C/D) collapse to an A prior on ManipBench.
+        template.append_message(template.roles[1], f"Answer: {label}")
         prompt = template.get_prompt()
         # A 224px task image produces one quarter of the native 448px
         # InternVL visual tokens. This keeps the long ManipBench question

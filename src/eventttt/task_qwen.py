@@ -67,7 +67,9 @@ def _batch_for_candidates(processor, sample: TaskSample, image, labels: Sequence
                           return_tensors="pt")
         spans = []
         for row, label in enumerate(labels):
-            answer_ids = processor.tokenizer(label, add_special_tokens=False)["input_ids"]
+            answer_ids = processor.tokenizer(
+                f"Answer: {label}", add_special_tokens=False
+            )["input_ids"]
             start = _find_last_subsequence(batch["input_ids"][row].tolist(), answer_ids)
             spans.append((start, start + len(answer_ids)))
         return batch, spans
