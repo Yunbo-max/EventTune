@@ -110,7 +110,8 @@ def run_method(method, family, model_id, support, query, out, *,
             adaptation.update({"layers": layers, "num_decoder_layers": layer_count,
                                "rank": kv_rank, "alpha_max": kv_alpha_max,
                                "coefficient_mode": "full", "basis_mode": basis_mode,
-                               "spectra": spectra})
+                               "spectra": spectra, "steps": kv_steps,
+                               "learning_rate": kv_learning_rate, "l2": kv_l2})
             adaptation["losses"] = fit_task_coefficients(
                 model, processor, support, controller, mask, steps=kv_steps,
                 learning_rate=kv_learning_rate, l2=kv_l2, family=family,
