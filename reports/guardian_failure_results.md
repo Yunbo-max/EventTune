@@ -12,4 +12,8 @@ Protocol: 8 support examples per class (16 total) and all remaining examples as 
 
 Ours has substantially better NLL than LoRA on all three splits (UR5-Fail 0.7734 vs 3.0313, RoboFail 0.8340 vs 7.5011, RoboVQA 0.8158 vs 4.3961), but does not yet win Macro-F1. This is informative: fixed success/failure semantics reduce the language-selection burden, yet the current two-layer visual KV update remains weaker than LoRA on OOD classification.
 
+## Support-only hyperparameter selection
+
+To test whether this was only a tuning issue, each of the 9 split/seed folds was divided into 12 support-train and 4 support-validation examples (2 per class). The following four configurations were compared by validation Macro-F1: rank16/alpha3, rank16/alpha1, rank32/alpha1, and rank32/alpha1 with L2=1e-2. The global winner was the original rank16/alpha3 configuration (mean validation Macro-F1 0.4519; rank32/alpha1 scored 0.4185). Refitting that selected configuration on all 16 support examples produced the query table above; no query-informed gain was found.
+
 The raw dataset is intentionally not tracked. Recreate it with `hf download paulpacaud/Guardian-FailCoT-OOD-datasets --repo-type dataset --local-dir data/guardian_ood/_ood_tmp` followed by the extraction layout described in `scripts/prepare_guardian_failure.py`.
