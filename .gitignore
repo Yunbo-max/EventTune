@@ -14,6 +14,7 @@ data/hub/.cache/
 data/hub/.gitattributes
 data/bright.jsonl
 data/prepared/
+data/guardian_ood/
 data/hawaii/
 runs/
 artifacts/
