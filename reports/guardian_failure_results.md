@@ -37,3 +37,27 @@ Thus 8 steps at lr=0.01 improves Ours over the earlier four-step setting by
 on the pooled nine-fold Macro-F1 because RoboFail remains difficult. The
 alpha-only support CV gave mean validation Macro-F1 0.3852 (alpha=2) and
 0.4111 (alpha=4), versus 0.4519 for alpha=3.
+
+## RoboFail-focused alpha sweep
+
+Because RoboFail is the only split where the eight-step configuration remains
+clearly below LoRA, we ran a split-specific, support-only alpha sweep while
+holding rank=16, layers=(14, 27), learning rate=0.01, steps=8, and L2=1e-3
+fixed. Each of the three support seeds used the same 12/4 internal
+train/validation split as the earlier selection protocol.
+
+| Alpha | Mean validation Macro-F1 | Per-seed validation Macro-F1 |
+|---:|---:|---:|
+| 0.5 | 0.3000 | 0.2000 / 0.5000 / 0.2000 |
+| 1 | 0.3000 | 0.2000 / 0.5000 / 0.2000 |
+| 2 | 0.5000 | 0.5000 / 0.5000 / 0.5000 |
+| 3 | **0.6556** | 0.7333 / 0.5000 / 0.7333 |
+| 4 | 0.4778 | 0.2000 / 0.5000 / 0.7333 |
+| 5 | **0.6556** | 0.7333 / 0.5000 / 0.7333 |
+
+Alpha=3 and alpha=5 tie on support validation; deterministic tie-breaking
+keeps alpha=3, so changing alpha alone does not explain the RoboFail gap.
+The clean query result for the selected setting remains 0.3952±0.0310, below
+LoRA's 0.5010±0.0645. The next principled experiments should therefore
+target optimizer/representation mismatch (for example layer gates or a
+visual Q/O residual), not query-driven alpha selection.
