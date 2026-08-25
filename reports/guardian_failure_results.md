@@ -61,3 +61,16 @@ The clean query result for the selected setting remains 0.3952±0.0310, below
 LoRA's 0.5010±0.0645. The next principled experiments should therefore
 target optimizer/representation mismatch (for example layer gates or a
 visual Q/O residual), not query-driven alpha selection.
+
+## RoboFail learning-rate follow-up
+
+With alpha=3, rank=16, layers=(14, 27), and steps=8 fixed, increasing the
+learning rate from 0.01 to 0.05 reduced RoboFail query Macro-F1:
+
+| Learning rate | Query Macro-F1 |
+|---:|---:|
+| 0.01 | 0.3952±0.0310 |
+| 0.05 | 0.3793±0.0713 |
+
+The lower learning rate is therefore retained for RoboFail; the larger rate
+does not recover the LoRA gap.
