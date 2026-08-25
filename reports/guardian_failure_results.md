@@ -17,3 +17,23 @@ Ours has substantially better NLL than LoRA on all three splits (UR5-Fail 0.7734
 To test whether this was only a tuning issue, each of the 9 split/seed folds was divided into 12 support-train and 4 support-validation examples (2 per class). The following four configurations were compared by validation Macro-F1: rank16/alpha3, rank16/alpha1, rank32/alpha1, and rank32/alpha1 with L2=1e-2. The global winner was the original rank16/alpha3 configuration (mean validation Macro-F1 0.4519; rank32/alpha1 scored 0.4185). Refitting that selected configuration on all 16 support examples produced the query table above; no query-informed gain was found.
 
 The raw dataset is intentionally not tracked. Recreate it with `hf download paulpacaud/Guardian-FailCoT-OOD-datasets --repo-type dataset --local-dir data/guardian_ood/_ood_tmp` followed by the extraction layout described in `scripts/prepare_guardian_failure.py`.
+
+## Fixed alpha=3, 8-step / low-learning-rate follow-up
+
+At the user's request, we also ran the fixed configuration rank=16, alpha=3,
+layers 14 and 27, 8 coefficient updates, learning rate 0.01, and L2=1e-3.
+This configuration was evaluated on the same nine query folds; it was not
+selected using query labels.
+
+| OOD split | LoRA Macro-F1 | Ours alpha3/lr0.01/steps8 | Ours alpha3/lr0.05/steps4 |
+|---|---:|---:|---:|
+| UR5-Fail | 0.4432±0.0510 | **0.4905±0.0308** | 0.4375±0.0688 |
+| RoboFail | **0.5010±0.0645** | 0.3952±0.0310 | 0.4231±0.0505 |
+| RoboVQA execution | 0.5159±0.0087 | **0.5204±0.0108** | 0.4917±0.0275 |
+| Overall nine folds | 0.4867±0.0531 | 0.4687±0.0610 | 0.4508±0.0547 |
+
+Thus 8 steps at lr=0.01 improves Ours over the earlier four-step setting by
+0.0179 overall and wins two of the three splits, but it does not exceed LoRA
+on the pooled nine-fold Macro-F1 because RoboFail remains difficult. The
+alpha-only support CV gave mean validation Macro-F1 0.3852 (alpha=2) and
+0.4111 (alpha=4), versus 0.4519 for alpha=3.

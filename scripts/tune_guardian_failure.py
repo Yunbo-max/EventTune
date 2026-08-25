@@ -16,6 +16,8 @@ from run_guardian_failure_suite import run_method
 
 GRID = (
     {"name": "r16_a3", "rank": 16, "alpha": 3.0, "l2": 1e-3, "layers": (14, 27)},
+    {"name": "r16_a2", "rank": 16, "alpha": 2.0, "l2": 1e-3, "layers": (14, 27)},
+    {"name": "r16_a4", "rank": 16, "alpha": 4.0, "l2": 1e-3, "layers": (14, 27)},
     {"name": "r16_a1", "rank": 16, "alpha": 1.0, "l2": 1e-3, "layers": (14, 27)},
     {"name": "r32_a1", "rank": 32, "alpha": 1.0, "l2": 1e-3, "layers": (14, 27)},
     {"name": "r32_a1_l2e2", "rank": 32, "alpha": 1.0, "l2": 1e-2, "layers": (14, 27)},
