@@ -233,3 +233,37 @@ do not promote it to the main method or spend additional seeds on it.
 
 The probe is reproducible with `scripts/run_class_conditional_kv.py`; its
 prediction artifacts remain under ignored `runs/diagnostics/`.
+
+## Camelyon three-seed replication and BRIGHT transfer
+
+Camelyon remains stable over all three fixed support seeds: aggregate rho is
+**0.7846+/-0.0049** and aggregate kappa is **0.9773+/-0.0079**.  Mean
+module-wise kappas are Q=0.9801, K=0.9676, V=0.9905, and O=0.9904.  The
+class-conditional means are 0.9876 for normal and 0.9802 for tumor.  This is
+the cleanest replicated positive regime: both geometry transfer and signed
+directional agreement are high and insensitive to support selection.
+
+We also ran the identical paired-image diagnostic on the archived Hugging Face
+BRIGHT splits (`humanlong/EventTune-BRIGHT`).  These archived 4-shot folds use
+12 support examples (4 per class); for the oracle diagnostic, the locked query
+is deterministically truncated to its first 100 examples per class.  Gradients
+are restricted to post-event visual tokens.  This is a mechanism analysis of
+the archived split, not a replacement for the formal support-24 benchmark.
+
+| BRIGHT fold | rho | kappa | Q kappa | K kappa | V kappa | O kappa |
+|---|---:|---:|---:|---:|---:|---:|
+| Hawaii wildfire | 0.4328 | **0.9754** | 0.9667 | 0.8241 | 0.9864 | 0.9835 |
+| Libya flood | 0.3689 | **0.6769** | 0.6522 | 0.4691 | 0.7940 | 0.6842 |
+
+Hawaii's class kappas are 0.9794/0.9201/0.9861 for intact/damaged/destroyed;
+Libya's are 0.9648/0.9827/0.9423.  Thus class-specific directions transfer
+strongly in both folds even though Libya's aggregate direction is weakened by
+class mixing.  As in RoboFail, aggregate kappa can conceal transferable
+within-class geometry.  Unlike ManipBench, the BRIGHT task keeps fixed damage
+semantics and requires evidence interpretation rather than action remapping,
+which is consistent with the strong signed class geometry and the existing
+BRIGHT advantage of Gradient-Covariance KV over LoRA.
+
+The paired-image runner is `scripts/analyze_bright_directional_geometry.py`.
+It uses query labels only to compute oracle diagnostic statistics and never to
+select or fit a deployable adapter.
