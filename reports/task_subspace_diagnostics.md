@@ -193,3 +193,43 @@ mapping.
 The corresponding runner is `scripts/analyze_directional_geometry.py`.  These
 seed-0 findings are strong mechanism evidence but require replication across
 support seeds before a paper-level predictive correlation claim.
+
+## Three-seed directional replication
+
+We replicated the signed analysis over the three fixed support seeds.  Values
+below are mean +/- sample standard deviation across seeds.
+
+| Dataset | rho | aggregate kappa | Q kappa | K kappa | V kappa | O kappa |
+|---|---:|---:|---:|---:|---:|---:|
+| RoboFail | 0.620+/-0.008 | 0.209+/-0.361 | 0.425 | 0.438 | 0.034 | -0.120 |
+| ManipBench droid-pick-place | 0.620+/-0.003 | 0.741+/-0.142 | 0.863 | 0.626 | 0.838 | 0.881 |
+
+RoboFail's aggregate sign reversal is not stable across support seeds: its
+aggregate kappas are -0.207, +0.387, and +0.448.  The stable result is instead
+class conditional.  Success kappa is 0.957/0.958/0.972 (mean 0.962), and
+failure kappa is 0.974/0.958/0.978 (mean 0.970).  Thus the data support robust
+within-class geometry together with seed-sensitive aggregate mixing, not a
+universal negative RoboFail direction.
+
+ManipBench has positive aggregate alignment on every seed
+(0.609/0.722/0.892), while the same local activation actuator remains well
+below the formal LoRA result.  This strengthens the actuator-sufficiency/task-
+mapping interpretation: correct directional transfer alone is not sufficient.
+
+## Class-conditional controller probe
+
+We tested one deliberately small optional extension on RoboFail seed 0.  It
+constructs a separate KV basis and controller for each support class, then
+scores each candidate label with its corresponding controller.  This is a
+diagnostic extension; the frozen backbone and core KV residual are unchanged.
+
+The probe failed: Macro-F1 fell to **0.1625** (balanced accuracy 0.4306), with
+success recall 0.0517 and failure recall 0.8095.  Candidate-specific
+controllers create score scales that are not directly comparable and strongly
+bias the argmax.  Moreover, the existing RoboFail support is already balanced
+8/8, so simple class-normalized coefficient fitting is algebraically identical
+to the current aggregate objective.  We therefore reject this extension and
+do not promote it to the main method or spend additional seeds on it.
+
+The probe is reproducible with `scripts/run_class_conditional_kv.py`; its
+prediction artifacts remain under ignored `runs/diagnostics/`.
