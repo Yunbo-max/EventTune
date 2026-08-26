@@ -118,3 +118,78 @@ PYTHONPATH=src python3 scripts/diagnose_task_subspace.py \
 ```
 
 Large covariances and prediction artifacts remain under ignored `runs/`.
+
+## Module-wise signed and class-conditional geometry
+
+The energy overlap above is unsigned.  We therefore also compute the cosine
+agreement between support and query mean correctness gradients after projecting
+both into the support-derived basis:
+
+```
+kappa = cos(P_Bs mean(G_support), P_Bs mean(G_query)).
+```
+
+Positive `kappa` means that support and query request the same correction in
+the transferred subspace; negative `kappa` means that the subspace contains
+query energy but the mean correction is reversed.  The same statistics are
+computed separately per projection, layer, and class.  This remains an oracle
+analysis because query labels define `G_query`.
+
+### Aggregate projection geometry
+
+| Dataset | Quantity | Q | K | V | O | All |
+|---|---|---:|---:|---:|---:|---:|
+| Camelyon17 | rho | 0.600 | **0.964** | 0.751 | 0.497 | 0.784 |
+| Camelyon17 | kappa | 0.982 | 0.960 | 0.991 | **0.994** | **0.974** |
+| RoboFail | rho | 0.507 | **0.863** | 0.394 | 0.290 | 0.610 |
+| RoboFail | kappa | **+0.034** | -0.101 | -0.298 | -0.361 | **-0.207** |
+| ManipBench droid-pick-place | rho | 0.493 | **0.820** | 0.480 | 0.338 | 0.617 |
+| ManipBench droid-pick-place | kappa | 0.731 | 0.441 | 0.756 | **0.815** | **0.609** |
+
+This signed statistic resolves the apparent RoboFail contradiction.  K has the
+highest energy overlap, but its mean support/query correction is opposed.
+Q is the only projection without a clearly negative aggregate direction, which
+matches the separate actuation result where Q-only has the best seed-0 F1.
+Camelyon is qualitatively different: every projection has strongly positive
+directional agreement.  ManipBench is not an aggregate sign-reversal case;
+its residual-versus-LoRA gap therefore still points to insufficient local
+functional authority or task-mapping capacity.
+
+### Layer boundary
+
+| Dataset | Layer 14 rho / kappa | Layer 27 rho / kappa |
+|---|---:|---:|
+| Camelyon17 | 0.614 / +0.989 | 0.989 / +0.956 |
+| RoboFail | 0.599 / -0.186 | 0.954 / **-0.892** |
+| ManipBench droid-pick-place | 0.617 / +0.609 | 0.913 / +0.175 |
+
+High late-layer overlap is not sufficient: layer 27 has high `rho` on all
+three tasks, but its direction is strongly reversed on RoboFail and only weakly
+aligned on ManipBench.  This is direct evidence for separating transferable
+geometry from actuator suitability.
+
+### Class-conditional geometry
+
+| Dataset / class | rho_c | kappa_c |
+|---|---:|---:|
+| Camelyon17 / normal | 0.780 | +0.984 |
+| Camelyon17 / tumor | 0.743 | +0.980 |
+| RoboFail / success | 0.586 | +0.957 |
+| RoboFail / failure | 0.647 | +0.974 |
+| ManipBench / A | 0.588 | +0.910 |
+| ManipBench / B | 0.545 | **+0.225** |
+| ManipBench / C | 0.540 | +0.832 |
+| ManipBench / D | 0.514 | +0.746 |
+
+RoboFail's two classes each transfer cleanly when analyzed separately, yet the
+aggregate direction is negative.  The support is class-balanced (8/8) while
+the query is strongly imbalanced (116 success / 21 failure for seed 0), so the
+relative class-gradient mixture changes between adaptation and evaluation.
+This supports a class-mixture cancellation/reweighting explanation rather than
+failure of both class-specific geometries.  ManipBench instead exposes one
+weakly aligned action class (B), consistent with heterogeneous action-semantic
+mapping.
+
+The corresponding runner is `scripts/analyze_directional_geometry.py`.  These
+seed-0 findings are strong mechanism evidence but require replication across
+support seeds before a paper-level predictive correlation claim.
