@@ -130,6 +130,60 @@ def analyze_group(support_group, query_group, rank):
     }
 
 
+def analyze_query_prior_mixture_oracle(support_stats, query_stats, labels, rank):
+    """Reweight support class means by the oracle query class prior.
+
+    The support-derived covariance/basis is unchanged.  Query labels affect
+    only the mixture weights, making this a diagnostic rather than a valid TTA
+    procedure.
+    """
+    support_group, query_group = support_stats["all"], query_stats["all"]
+    query_counts = {
+        label: query_stats["classes"][label][next(iter(query_group))]["samples"]
+        for label in labels
+    }
+    query_total = sum(query_counts.values())
+    priors = {label: query_counts[label] / query_total for label in labels}
+    covariances = {
+        key: torch.cat(block["gradient_rows"], dim=0).T @ torch.cat(block["gradient_rows"], dim=0)
+        for key, block in support_group.items()
+    }
+    bases = top_bases(covariances, rank)
+    modules = {}
+    for key in sorted(support_group):
+        basis = bases[key]
+        support_mean = sum(
+            priors[label]
+            * torch.cat(support_stats["classes"][label][key]["gradient_rows"], dim=0).mean(dim=0)
+            for label in labels
+        )
+        query_rows = torch.cat(query_group[key]["gradient_rows"], dim=0)
+        query_mean = query_rows.mean(dim=0)
+        captured = float(torch.linalg.vector_norm(query_rows @ basis).square())
+        total = float(torch.linalg.vector_norm(query_rows).square())
+        modules[f"{key[0]}:{key[1]}"] = {
+            "rho": captured / max(total, 1e-20),
+            "kappa": cosine(
+                basis @ (basis.T @ support_mean),
+                basis @ (basis.T @ query_mean),
+            ),
+            "captured_energy": captured,
+            "query_energy": total,
+        }
+    by_kind, by_layer = defaultdict(list), defaultdict(list)
+    for name, row in modules.items():
+        layer, kind = name.split(":")
+        by_kind[kind].append(row)
+        by_layer[layer].append(row)
+    return {
+        "warning": "ORACLE: support class means use query-label class priors",
+        "query_class_counts": query_counts,
+        "query_class_priors": priors,
+        "aggregate": aggregate(list(modules.values())),
+        "by_kind": {key: aggregate(value) for key, value in sorted(by_kind.items())},
+        "by_layer": {key: aggregate(value) for key, value in sorted(by_layer.items(), key=lambda x: int(x[0]))},
+        "modules": modules,
+    }
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--family", choices=("qwen3_vl", "internvl3"), default="internvl3")
@@ -168,6 +222,9 @@ def main():
         "support_examples": len(support),
         "query_examples": len(query),
         "all": analyze_group(support_stats["all"], query_stats["all"], args.rank),
+        "query_prior_mixture_oracle": analyze_query_prior_mixture_oracle(
+            support_stats, query_stats, support[0].candidate_labels, args.rank
+        ),
         "classes": {
             label: analyze_group(
                 support_stats["classes"][label], query_stats["classes"][label], args.rank

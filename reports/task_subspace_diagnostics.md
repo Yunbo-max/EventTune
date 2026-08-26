@@ -211,6 +211,28 @@ failure kappa is 0.974/0.958/0.978 (mean 0.970).  Thus the data support robust
 within-class geometry together with seed-sensitive aggregate mixing, not a
 universal negative RoboFail direction.
 
+### Query-prior mixture oracle
+
+To test the mixing explanation directly, we keep the support covariance and
+support-derived basis fixed, but reweight the support class-mean gradients by
+the oracle query class prior (116 success / 21 failure).  Query labels affect
+only these two mixture weights; this is not a deployable adaptation rule.
+
+| Seed | Original aggregate kappa | Query-prior-reweighted kappa |
+|---:|---:|---:|
+| 0 | -0.2065 | **0.9070** |
+| 1 | 0.3866 | **0.9375** |
+| 2 | 0.4475 | **0.9574** |
+| Mean +/- SD | 0.2092+/-0.3613 | **0.9340+/-0.0254** |
+
+After reweighting, mean module-wise kappas are Q=0.9521, K=0.9433,
+V=0.9143, and O=0.9267.  The recovery is therefore not isolated to one
+projection.  This provides direct evidence that support/query class-mixture
+shift causes much of the unstable aggregate direction on RoboFail, while the
+strong within-class correction geometry remains transferable.  It does not
+show that the query prior is available at test time, nor that prior
+reweighting alone closes the F1 gap.
+
 ManipBench has positive aggregate alignment on every seed
 (0.609/0.722/0.892), while the same local activation actuator remains well
 below the formal LoRA result.  This strengthens the actuator-sufficiency/task-
