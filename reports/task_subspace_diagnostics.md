@@ -267,3 +267,35 @@ BRIGHT advantage of Gradient-Covariance KV over LoRA.
 The paired-image runner is `scripts/analyze_bright_directional_geometry.py`.
 It uses query labels only to compute oracle diagnostic statistics and never to
 select or fit a deployable adapter.
+
+## Cross-regime Geometry x Actuator synthesis
+
+The combined evidence does not support using either rho or kappa as a scalar
+leaderboard predictor.  The useful diagnostic is a decision sequence: first
+ask whether the signed correction transfers; then ask whether a query-derived
+basis with the same local actuator can approach the weight-adaptation result.
+
+| Regime | Geometry evidence | Same-actuator oracle evidence | Formal Ours - LoRA F1 | Diagnosis |
+|---|---|---|---:|---|
+| Camelyon17 | rho 0.7846+/-0.0049; kappa 0.9773+/-0.0079 | query-basis KV 0.6632 vs LoRA 0.6325 | -0.1218 | geometry and actuator are sufficient; support estimation/coefficient margin remains |
+| RoboFail | rho 0.6196; aggregate kappa seed-sensitive, class kappa 0.962/0.970 | query-basis KV 0.4119; Q-only seed-0 0.4811 vs LoRA 0.5010 | -0.1058 | class-mixture and actuation-site mismatch |
+| ManipBench droid-pick | rho 0.6199; kappa 0.7412 | query-basis KV 0.2482 vs LoRA 0.4304 | -0.1465 | local activation actuator lacks task-remapping authority |
+| BRIGHT Hawaii | rho 0.4328; kappa 0.9754; all class kappas >=0.920 | not run (formal KV already wins) | +0.1714 | fixed-semantics evidence shift |
+| BRIGHT Libya | rho 0.3689; kappa 0.6769; all class kappas >=0.942 | not run (formal KV already wins) | +0.0578 | class directions transfer despite aggregate mixing |
+
+The F1 differences use the corrected InternVL3 formal results.  BRIGHT's formal
+rows use support 24, whereas its geometry columns use the archived Hugging Face
+support-12 diagnostic folds, so BRIGHT is a qualitative cross-protocol check
+rather than a matched correlation point.  The other oracle rows use query
+labels and are never valid deployable scores.
+
+This table sharpens the paper claim.  High signed transfer is not sufficient:
+ManipBench has positive kappa but its query-basis oracle remains far below
+LoRA.  Nor does high kappa guarantee that finite-support coefficient fitting
+will realize the available correction, as Camelyon shows.  The defensible
+mechanism statement is therefore:
+
+> Internal-state TTA can substitute for weight adaptation when the correction
+> direction transfers and the chosen activation site has enough functional
+> authority; finite-support estimation and margin realization remain separate
+> sources of error.
