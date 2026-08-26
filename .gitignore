@@ -12,6 +12,7 @@ data/splits/
 data/smoke/
 data/hub/.cache/
 data/hub/.gitattributes
+data/hf_eventtune_bright/
 data/bright.jsonl
 data/prepared/
 data/guardian_ood/

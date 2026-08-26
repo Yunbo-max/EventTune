@@ -13,45 +13,50 @@
 
 \begin{document}
 
-\title{Gradient-Covariance Key--Value Test-Time Tuning for Event-Adaptive Damage Assessment}
+\title{When Can Internal-State Adaptation Replace Weight Adaptation in Vision--Language Models?}
 \author{\IEEEauthorblockN{Anonymous Authors}}
 \maketitle
 
 \begin{abstract}
-Adapting a vision--language model (VLM) to a newly observed disaster normally
-requires storing and optimizing millions of weight-space parameters. We propose
-\emph{Key--Value Test-Time Tuning} (\KVTTT{}), which freezes a raw VLM and
-learns a bounded residual on only the post-event image-token rows of selected
-decoder key/value projections. From 24 labeled event examples, we form the
-uncentered second moment of per-token correctness gradients,
-$C=N^{-1}\sum_i G_i^\top G_i$, and retain its leading eigenspace. A Full
-controller learns a small matrix within that space; a Diagonal controller
-learns one gain per direction. On four strictly class-balanced \textsc{BRIGHT}
-events, a single rank-16 Full configuration ($1{,}024$ scalars) improves the raw
-Qwen2.5-VL-7B macro-F1 from $0.2234$ to $0.3208$, compared with $0.2986$ for a
-$10.1$M-parameter LoRA trained for one support epoch. Across a controlled alpha
-sweep, per-event oracle Full and Diagonal means are $0.3504$ and $0.3254$,
-respectively; we report these only as diagnostic upper bounds because choosing
-alpha on the query set is not a valid primary estimator. Three-support-seed
-tests for the compact rank-5 model show statistically significant gains over
-the raw VLM. Query latency remains indistinguishable from raw inference, while
-the compact Full state has 100 learned scalars versus over ten million for
-LoRA. Mechanism controls favor the gradient second moment over mean-gradient,
-centered-covariance, and random subspaces.
+Few-shot adaptation of a vision--language model (VLM) commonly changes model
+weights, even when the target shift may require only a small correction to how
+visual evidence is read.  We ask a broader question: \emph{when can adapting a
+frozen model's internal state replace weight adaptation?}  We study a simple
+test-time method, \emph{Key--Value Test-Time Tuning} (\KVTTT{}), that constructs
+a low-rank basis from the second moment of support correctness gradients and
+learns a bounded residual on task-relevant visual key/value activations.  By
+the Ky Fan maximum principle, this basis is the rank-$r$ subspace retaining the
+maximum support gradient energy.  Across disaster assessment, histopathology,
+robot failure recognition, and vision--language action classification, we find
+that energy coverage alone is not predictive.  Successful internal-state
+adaptation additionally requires signed support--query directional transfer
+and an activation site with sufficient functional authority.  On fixed-
+semantics \textsc{BRIGHT}, \KVTTT{} exceeds matched LoRA on average with
+$1{,}024$ learned coefficients versus $10.1$M LoRA parameters, and the pattern
+replicates across VLM families.  Camelyon exhibits stable geometry and a
+query-basis KV oracle that reaches LoRA, while RoboFail exposes class-mixture
+and site mismatch: oracle prior reweighting raises directional agreement from
+$0.209\!\pm\!0.361$ to $0.934\!\pm\!0.025$.  ManipBench remains far below LoRA
+even with query-derived bases and broader activation sites, identifying a
+capability boundary rather than an optimization failure.  These results turn
+internal-state adaptation from a universal replacement claim into a testable
+account of when local, calibration-preserving adaptation is sufficient.
 \end{abstract}
 
 \begin{IEEEkeywords}
-test-time adaptation, vision--language models, remote sensing, disaster damage,
-gradient covariance, parameter-efficient adaptation.
+test-time adaptation, vision--language models, internal-state adaptation,
+gradient geometry, parameter-efficient adaptation.
 \end{IEEEkeywords}
 
 \section{Introduction}
-\IEEEPARstart{D}{isaster} damage assessment is an event-shift problem: sensor,
-illumination, geography, building style, and damage appearance change exactly
-when rapid deployment is required. VLMs provide useful paired-image priors, but
-weight-space fine-tuning produces an adapter that is expensive relative to a
-24-example event support. LoRA~\cite{hu2021lora} is parameter-efficient at model
-scale, yet our Qwen2.5-VL-7B baseline still learns $10{,}092{,}544$ parameters.
+\IEEEPARstart{F}{ew-shot} deployment poses an ambiguous adaptation problem.  A
+new domain may preserve a capability already present in a VLM and change only
+which visual evidence should be trusted.  Alternatively, it may require a new
+language--vision decision rule or action mapping.  Weight-space methods such as
+LoRA~\cite{hu2021lora} can address both cases, but use far more degrees of
+freedom than necessary in the first and can produce severely overconfident
+errors.  Internal-state adaptation is a compelling smaller alternative, yet
+its applicability conditions are poorly understood.
 
 We ask whether event adaptation can instead be expressed as a low-dimensional
 change in a frozen model's working activations. Transformer key/value projections
@@ -62,13 +67,22 @@ the second moment $\sum_iG_i^\top G_i$, not the average gradient. Its leading
 eigenvectors preserve a space of corrective directions even when example-level
 gradients cancel in the mean.
 
-Our contributions are: (i) a post-image-only residual controller whose identity
-initialization leaves the frozen VLM unchanged; (ii) a gradient-covariance
-construction with Full and Diagonal low-rank variants; (iii) a strict protocol
-on four events with balanced support (8/class), balanced query (100/class), and
-tile-disjoint support/query; and (iv) mechanism, capacity, optimization,
-statistical, and exact efficiency measurements. We distinguish fixed,
-test-independent configurations from query-oracle ablations throughout.
+Our central hypothesis is that successful internal-state test-time adaptation
+requires two conditions: \emph{directional geometry transfer}, meaning that
+support and query request compatible corrections in the learned subspace, and
+\emph{actuator sufficiency}, meaning that the intervened activation can realize
+the target functional change.  We test this hypothesis rather than expanding
+the method until it approximates a small weight adapter.
+
+Our contributions are: (i) a frozen-backbone, visual-KV residual whose
+gradient-covariance basis is optimal for rank-constrained support energy
+retention; (ii) energy-overlap ($\rho$), signed-alignment ($\kappa$),
+class-conditional, query-basis, and projection-site diagnostics that separate
+geometry from actuation; (iii) evidence across \textsc{BRIGHT}, Camelyon17,
+Guardian/FailCoT, and ManipBench, including multiple VLM families and matched
+three-seed task evaluations; and (iv) explicit positive, mismatch, and
+capability-boundary regimes.  Query labels are used only in clearly marked
+mechanism oracles, never for primary adaptation or model selection.
 
 \section{Related Work}
 \textbf{Test-time adaptation.} Test-time training~\cite{sun2020ttt},
@@ -108,6 +122,38 @@ B^{(l,t)}=\operatorname{TopEig}_r(C^{(l,t)}).
 This is equivalent to retaining the leading right singular directions of the
 stacked token gradients. It preserves directional variation that
 $\bar g=N^{-1}\sum_i g_i$ discards.
+
+\paragraph{Optimal rank-constrained energy retention.}
+Let $C\succeq0$ and let $B\in\mathbb{R}^{d\times r}$ satisfy
+$B^\top B=I_r$.  The correctness-gradient energy retained by the subspace is
+\begin{equation}
+\mathcal E(B)=\operatorname{tr}(B^\top C B)
+=\frac{1}{N}\sum_i\lVert G_iB\rVert_F^2.
+\end{equation}
+By the Ky Fan maximum principle~\cite{fan1951maximum},
+\begin{equation}
+B^*=\operatorname{TopEig}_r(C)
+\in\arg\max_{B^\top B=I_r}\operatorname{tr}(B^\top C B),
+\end{equation}
+and the optimum equals the sum of the largest $r$ eigenvalues of $C$.
+Thus the basis is not an arbitrary SVD heuristic: among all rank-$r$
+subspaces it preserves the most support correctness-gradient energy.  This
+property is deliberately limited.  It guarantees neither that query gradients
+occupy the same subspace, that their signed mean agrees with support, nor that
+a residual at the chosen activation can express the required decision change.
+
+\paragraph{Geometry and actuator diagnostics.}
+For support basis $B_S$ and stacked query gradients $G_Q$, we measure energy
+transfer and signed agreement as
+\begin{equation}
+\rho=\frac{\lVert G_QB_S\rVert_F^2}{\lVert G_Q\rVert_F^2},\qquad
+\kappa=\cos(P_{B_S}\bar g_S,P_{B_S}\bar g_Q),
+\end{equation}
+where $P_{B_S}=B_SB_S^\top$.  High $\rho$ says that relevant query energy is
+covered; high $\kappa$ says that the requested average correction is aligned.
+We then hold subspace size fixed and vary the intervention site or use a
+query-derived basis as an oracle test of actuator authority.  These diagnostics
+read query labels and are never deployable performance estimates.
 
 \subsection{Bounded residual controller}
 For a Diagonal controller,
@@ -183,6 +229,25 @@ $q/k/v/o$ targets, learning rate $10^{-4}$, batch size 1, gradient accumulation
 3, and eight optimizer updates---exactly one pass over support24, without
 support cross-validation. Metrics are macro-F1, balanced accuracy, and NLL.
 
+\paragraph{Cross-task evaluation.}
+We additionally evaluate InternVL3-8B and Qwen3-VL-8B on Camelyon17 hospital
+2 (binary histopathology, support16/query300) and ManipBench Q1 (four-way
+vision--language action classification, query400), with three matched support
+seeds and identical query IDs for Frozen, rank-16 LoRA, Random-KV, and
+\KVTTT{}. Guardian/FailCoT uses InternVL3-8B on three fixed-semantics
+success/failure splits, support16, and three matched seeds. Corrected
+InternVL3 task results use the required \texttt{Answer: <label>} format; older
+raw-label ManipBench runs are excluded. Main performance results never use
+query labels. Mechanism diagnostics do, and are reported separately as
+oracles.
+
+The evidence blocks serve different statistical roles. BRIGHT's primary
+four-method comparison uses one locked support24 per event; its independent
+three-support-seed suite estimates KV-versus-Frozen robustness but does not
+provide a matched multiseed LoRA comparison. Camelyon, Guardian, and
+ManipBench use matched support seeds. We keep these estimands separate rather
+than pooling incompatible replications.
+
 \subsection{Fixed-configuration main comparison}
 Table~\ref{tab:fixed} uses one common rank-16, alpha-3, four-update KV
 configuration across events. Full improves the raw VLM on every event and has
@@ -193,6 +258,45 @@ accuracy--adaptation-size trade-off rather than hiding metrics on which LoRA is
 better.
 
 \input{tables/main_table}
+
+\begin{table}[t]
+\centering\small
+\caption{Four-event BRIGHT mean macro-F1 under the locked support24/query300
+protocol for two additional 8B backbones.}
+\label{tab:brightbackbones}
+\begin{tabular}{lrrrr}
+\toprule
+Backbone & Frozen & LoRA & Random-KV & Ours\\
+\midrule
+Qwen3-VL-8B & .1667 & .2034 & .1687 & \textbf{.3492}\\
+InternVL3-8B & .1848 & .1667 & .2214 & \textbf{.2860}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+These architecture-transfer results reproduce the BRIGHT ranking without
+selecting a different actuator.  Additional Phi, Gemma, and LLaVA controls are
+mixed---Ours is strongest on Gemma, LoRA on Phi, and Frozen on LLaVA---so the
+claim is cross-architecture evidence, not universal dominance.
+
+\begin{table*}[t]
+\centering\small
+\caption{Corrected InternVL3 cross-task macro-F1 (mean $\pm$ sample SD over
+three matched support seeds). Guardian reports the fixed eight-step Ours
+follow-up; Random-KV was not run in that suite.}
+\label{tab:crosstask}
+\begin{tabular}{lrrrr}
+\toprule
+Task & Frozen & LoRA & Random-KV & Ours\\
+\midrule
+Camelyon17 hospital 2 & $.3333\pm.0000$ & $.6325\pm.2725$ & $.4935\pm.0071$ & $.5107\pm.0837$\\
+Guardian UR5-Fail & $.4513\pm.0067$ & $.4432\pm.0510$ & -- & $\mathbf{.4905\pm.0308}$\\
+Guardian RoboFail & $.4476\pm.0263$ & $\mathbf{.5010\pm.0645}$ & -- & $.3952\pm.0310$\\
+Guardian RoboVQA & $.4043\pm.0068$ & $.5159\pm.0087$ & -- & $\mathbf{.5204\pm.0108}$\\
+ManipBench droid-pick & $.1541\pm.0000$ & $\mathbf{.4304\pm.2223}$ & $.1556\pm.0047$ & $.2839\pm.0729$\\
+\bottomrule
+\end{tabular}
+\end{table*}
 
 \subsection{Rank-16 alpha sweep}
 We sweep alpha in $\{0.5,1,2,3,5,10\}$ for both controllers on all events
@@ -265,6 +369,71 @@ Covariance $-$ random basis & $+0.0551$ & $[+0.0058,+0.1036]$ & $0.0022$\\
 \end{tabular}
 \end{table*}
 
+\subsection{When does internal-state adaptation suffice?}
+Table~\ref{tab:regimes} combines primary performance with oracle mechanism
+evidence.  It is not a correlation fit: the rows have deliberately different
+roles, and BRIGHT geometry uses archived support12 folds while its primary
+performance uses support24.  Instead, the table implements a sequence of
+falsification tests for geometry transfer and actuator sufficiency.
+
+\begin{table*}[t]
+\centering\small
+\caption{Geometry--Actuator regimes.  $\Delta$F1 is Ours minus LoRA under the
+corresponding clean primary protocol.  Query-basis and site results are
+query-label oracles, not deployable scores.}
+\label{tab:regimes}
+\begin{tabular}{lrrrrl}
+\toprule
+Task & $\rho$ & $\kappa$ & $\Delta$F1 & Same-actuator oracle & Diagnosis\\
+\midrule
+BRIGHT Hawaii & .433 & .975 & +.171 & -- & fixed-semantics evidence shift\\
+BRIGHT Libya & .369 & .677 & +.058 & -- & transferable class geometry\\
+Camelyon17 & $.785\pm.005$ & $.977\pm.008$ & -.122 & query-basis KV .663 vs LoRA .633 & finite-support/margin gap\\
+RoboFail & $.620\pm.008$ & $.209\pm.361$ & -.106 & Q-only .481 vs LoRA .501 & mixture and site mismatch\\
+ManipBench droid-pick & $.620\pm.003$ & $.741\pm.142$ & -.147 & query-basis KV .248 vs LoRA .430 & actuator/capability boundary\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\paragraph{Positive evidence-shift regime.}
+BRIGHT keeps the damage labels and decision semantics fixed while geography,
+sensor conditions, and damage appearance change.  On the four-event locked
+Qwen2.5 protocol, Full KV obtains .3208 mean macro-F1 versus .2986 for LoRA and
+.2234 frozen, using 1,024 learned coefficients rather than 10.1M weight
+parameters.  Qwen3-VL and InternVL3 show the same qualitative ordering in the
+four-method architecture-transfer table.  Hawaii has strongly positive
+directional agreement in every class; Libya's aggregate agreement is weaker,
+but its class kappas all exceed .94.
+
+\paragraph{Geometry transfers but realization can fail.}
+Camelyon has stable high $\rho$ and $\kappa$ across three seeds.  Replacing the
+support basis by a query-derived basis while retaining the same KV actuator
+reaches .663 F1, comparable to or above the LoRA mean.  The local actuator can
+therefore express the correction, while finite-support subspace estimation and
+coefficient-margin realization remain error sources.  This is also visible in
+calibration: corrected InternVL \KVTTT{} has NLL .784 versus 1.990 for LoRA
+despite lower macro-F1, consistent with conservative probability correction
+rather than aggressive boundary movement.
+
+\paragraph{Mixture and site mismatch.}
+RoboFail's class-conditional kappas are stable across seeds (success .962,
+failure .970), whereas aggregate kappa is seed-sensitive.  Keeping the
+support covariance and basis fixed but reweighting support class means with
+the oracle query prior changes aggregate kappa from $.209\pm.361$ to
+$.934\pm.025$.  The recovery occurs for Q, K, V, and O, directly implicating
+class-mixture cancellation.  Q-only is the strongest seed-0 site diagnostic,
+but is not promoted to the method because it is not consistently beneficial
+elsewhere.
+
+\paragraph{Capability boundary.}
+ManipBench asks the model to compose instructions and images into changing
+A/B/C/D action semantics.  Its directional agreement is positive, yet a
+query-derived KV basis reaches only .248 F1 and QKVO only .263, far below the
+.430 LoRA mean.  Longer coefficient optimization improves ordinary KV but
+does not change this ordering.  The bottleneck is therefore not merely finding
+the direction: local activation control lacks the functional authority of
+weight adaptation for task/action remapping.
+
 \subsection{Capacity, support sensitivity, and efficiency}
 Adapting every decoder layer with rank-16 Full matrices (14,336 scalars) is not
 beneficial. Naively retaining alpha 3 and learning rate 0.05 causes support-loss
@@ -286,23 +455,31 @@ approximately 44 KiB), versus $10{,}092{,}544$ parameters and 39.5 MiB for
 LoRA. KV extraction and coefficient fitting average 17 and 53 seconds.
 
 \section{Limitations}
-The completed strict study contains four events and one 7B backbone; broader
-backbone and task claims are not yet supported. Per-event alpha maxima use the
-query set and are diagnostic only. Small support sets are spatially concentrated
-and produce controller sensitivity, including nominal-repeat variation on
-Hawaii. LoRA remains better on two events under the fixed configuration. The
-method's principal demonstrated advantage is an accuracy--state-size trade-off,
-not universal accuracy dominance.
+BRIGHT's clean four-method table uses one locked support set per event.  Its
+three-seed robustness suite repeats KV but not LoRA, so we do not claim a
+matched multiseed KV--LoRA significance test.  The archived BRIGHT geometry
+folds use support12 rather than the primary support24 and provide qualitative,
+not correlational, evidence.  Query-basis, query-prior, and projection-site
+experiments use query labels and are mechanism oracles only.  Small supports
+remain sensitive to spatial and class-mixture composition.  The evaluation
+spans several VLM families, but not all backbones are run on every task.
+Finally, local KV control is intentionally not universal: it remains weaker
+than LoRA when the target requires substantial action/semantic remapping.
+These boundaries are part of the claim rather than targets for dataset-
+specific actuator selection.
 
 \section{Conclusion}
-Gradient-covariance \KVTTT{} adapts a frozen VLM with tens to thousands of
-activation-space scalars and essentially unchanged inference cost. A fixed
-rank-16 Full controller improves mean macro-F1 over both raw inference and a
-one-epoch LoRA baseline on four balanced events; compact variants significantly
-beat raw inference across support seeds. The second-moment mechanism is more
-reliable than mean-gradient, centered, and random controls. Future evaluation
-must preselect alpha from support alone, repeat sensitive configurations, and
-extend the protocol beyond one backbone and four events.
+Gradient-covariance \KVTTT{} shows that a frozen VLM can sometimes be adapted
+with a tiny visual activation-state controller instead of a weight adapter.
+The key qualification is mechanistic: maximum support gradient-energy
+retention is only the first step.  The correction must also transfer with the
+right sign, and the selected activation must have enough causal authority to
+realize it.  BRIGHT illustrates the positive fixed-semantics evidence-shift
+regime; Camelyon separates actuator capacity from finite-support realization;
+RoboFail exposes class-mixture and site mismatch; and ManipBench establishes a
+task-remapping boundary.  The resulting answer to ``when can internal-state
+adaptation replace weight adaptation?'' is neither always nor never: when the
+target correction is directionally transferable and locally expressible.
 
 \appendices
 \section{Complete Fixed-Configuration Metrics}

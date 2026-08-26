@@ -1,6 +1,7 @@
 # EventTune
 
-Few-shot event-time adaptation of a small vision-language model for building-damage assessment from paired remote-sensing images.
+Few-shot internal-state adaptation of frozen vision--language models, with
+cross-domain evidence on remote sensing, medical imaging, and robotics.
 
 ## ICLR generalization expansion
 
@@ -8,8 +9,18 @@ The current expansion tests a broader principle: few-shot test-time adaptation
 can modify task-relevant internal visual evidence states instead of model
 weights. It keeps one gradient-second-moment KV-TTT operator across remote
 sensing, medical imaging, and robot manipulation, changing only the visual-token
-mask. Qwen2.5-VL-7B is the primary backbone and Phi-3.5-Vision provides the
-architecture-level validation.
+mask. Qwen2.5-VL-7B is the primary BRIGHT backbone; Qwen3-VL-8B and
+InternVL3-8B provide the main architecture transfer, with additional
+Phi/Gemma/LLaVA BRIGHT controls.
+
+**Current evidence freeze (2026-08-26).** The GPU experiment phase is closed.
+The ICLR 2027 draft asks when internal-state adaptation can replace weight
+adaptation, with BRIGHT as the positive evidence-shift regime, Camelyon as a
+geometry/realization diagnostic, RoboFail as a class-mixture/site mismatch,
+and ManipBench as an actuator/capability boundary. See
+[`reports/iclr2027_evidence_audit.md`](reports/iclr2027_evidence_audit.md) for
+the protocol/source-of-truth matrix and [`paper/main.pdf`](paper/main.pdf) for
+the current compiled draft. Query-label results are mechanism oracles only.
 
 To reproduce the pinned model and dataset preparation:
 
@@ -29,6 +40,9 @@ are in [`configs/oral_generalization.yaml`](configs/oral_generalization.yaml)
 and [`docs/LUNA_ORAL_EXECUTION.md`](docs/LUNA_ORAL_EXECUTION.md).
 
 ## Project status and history
+
+The dated snapshot below is retained as historical provenance and is
+superseded by the current evidence freeze above.
 
 **Snapshot: 2026-08-08 UTC.** The end-to-end system is implemented and has
 completed one full 7B diagnostic, but the research hypothesis is **not yet
